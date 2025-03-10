@@ -1,0 +1,126 @@
+.tabs-component {
+    margin: 20px auto 0;
+    max-width: 600px;
+    min-height: 300px;
+    background-color: var(--background-color);
+    border-radius: 2px;
+    position: relative;
+}
+.tabs-container {
+    background-color: var(--background-color);
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid #f1f1f125;
+}
+.tabs {
+    flex-grow: 1;
+    padding: 15px 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 22px;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+    background: var(--secondary-background-color);
+    color: var(--primary-text-color);
+    position: relative;
+}
+.tabs:not(:nth-child(3)) {
+    border-right: 1px solid #f1f1f125;
+}
+
+.content {
+    width: 100%;
+    display: none;
+    color: #f1f1f1;
+    padding: 20px;
+    box-sizing: border-box;
+}
+.content h3 {
+    font-family: Raleway;
+    font-weight: 600;
+    font-size: 25px;
+    margin-bottom: 10px;
+}
+.content p {
+    font-family: Open sans;
+    font-weight: 100;
+    font-size: 20px;
+    line-height: 1.4;
+}
+
+.active-content {
+    display: block;
+}
+.active {
+    background-color: var(--foreground-color);
+    color: #f1f1f1;
+}
+
+.close-button {
+    position: absolute;
+    top: -17px;
+    right: -25px;
+    cursor: pointer;
+    font-size: 20px;
+    background-color: var(--foreground-color);
+}
+
+form {
+    display: flex;
+    flex-direction: column;
+    margin: auto;
+    padding: 20px;
+    border-radius: 8px;
+  }
+  
+  label {
+    color: var(--primary-text-color);
+    margin-bottom: 10px;
+  }
+  
+  input,
+  select {
+    width: 100%;
+    padding: 10px;
+    margin-top: 5px;
+    box-sizing: border-box;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: var(--secondary-background-color);
+    color: var(--primary-text-color);
+    border: 5px solid var(--secondary-background-color)
+  }
+  
+  input[type="checkbox"] {
+    width: auto;
+    margin-right: 5px;
+  }
+  
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url('data:image/svg+xml;utf8,<svg fill="%23444444" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/><path d="M0 0h24v24H0z" fill="none"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 10px top 50%;
+    cursor: pointer;
+  }
+  
+  option {
+    background-color: var(--secondary-background-color);
+    color: var(--primary-text-color);
+  }
+
+  .save-button {
+    width: 30%;
+    text-align: center;
+    margin: 20px auto;
+    padding: 10px;
+    border: none;
+    border-radius: 4px;
+    background-color: var(--foreground-color);
+    color: var(--background-color);
+    cursor: pointer;
+  }

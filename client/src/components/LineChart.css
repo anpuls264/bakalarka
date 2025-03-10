@@ -1,0 +1,37 @@
+.line-chart-container {
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  background-color: var(--secondary-background-color);
+}
+
+.line-chart-container h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 1.2rem;
+  text-align: center;
+  color: var(--primary-text-color);
+}
+
+.filter-buttons {
+  display: flex;
+  margin-bottom: 10px;
+  justify-content: flex-end;
+}
+
+.filter-buttons button {
+  color: #666;
+  background: none;
+  border: none;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.filter-buttons button:hover {
+  color: var(--foreground-color);
+}
+
+.filter-buttons button.active {
+  border-bottom: 3px solid var(--foreground-color); 
+  color: var(--foreground-color); 
+}

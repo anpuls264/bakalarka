@@ -1,0 +1,8 @@
+# .gitignore pro serverovou část
+
+node_modules/
+*.env
+*.db
+*.js
+*.js.map
+*.db

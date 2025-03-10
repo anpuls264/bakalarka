@@ -1,0 +1,68 @@
+.current-brightness-container {
+    margin-top: 20px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--secondary-background-color);
+    padding: 0px 20px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+    height: 150px;
+  }
+  
+  .current-brightness-container .label {
+    color: var(--secondary-text-color);
+    font-size: 0.9rem;
+  }
+  
+  .current-brightness-container .brightness-control {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .current-brightness-container .icon {
+    font-size: 3.2rem; /* Zvětšená velikost ikony */
+    margin-right: 10px;
+    cursor: pointer;
+  }
+
+  .on {
+    color: var(--primary-text-color);
+  }
+  
+  .off {
+    color: var(--foreground-color);
+  }
+  
+  
+  .current-brightness-container .brightness-slider {
+    flex-grow: 1;
+    margin: 0 10px;
+    max-width: 20%; 
+  }
+  
+  .current-brightness-container .value {
+    font-size: 0.875rem;
+    color: var(--secondary-text-color);
+    margin-bottom: 5px;
+  }
+  
+  .current-brightness-container .min-max-text {
+    font-size: 0.875rem;
+    color: var(--secondary-text-color);
+    margin-bottom: 5px;
+  }
+  
+  @media screen and (max-width: 768px) {
+    html {
+      font-size: 14px;
+    }
+  
+    .current-brightness-container .label {
+      font-size: 1rem;
+    }
+  
+    .current-brightness-container .value {
+        font-size: 0.75rem;
+    }
+  }

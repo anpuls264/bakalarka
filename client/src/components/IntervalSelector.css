@@ -1,0 +1,35 @@
+.interval-selector {
+  display: flex;
+  align-items: center;
+  margin-left: 10px; /* Adjust spacing based on your existing design */
+}
+
+.interval-selector label {
+  margin-right: 10px;
+  color: #fff; /* Change color based on your theme */
+  font-size: 14px;
+}
+
+.interval-selector select {
+  padding: 10px 20px;
+  border-radius: 5px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  background-color: var(--secondary-background-color );
+  color: var(--secondary-text-color);
+  outline: none; /* Removes the default focus outline */
+}
+
+/* Responsive adjustments if needed */
+@media (max-width: 768px) {
+  .interval-selector {
+    margin-top: 10px; /* Additional spacing in smaller screens */
+  }
+
+  .interval-selector label {
+    font-size: 12px; /* Smaller font size for smaller screens */
+  }
+
+  .interval-selector select {
+    padding: 3px 7px;
+  }
+}

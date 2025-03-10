@@ -1,0 +1,35 @@
+.tooltip-container {
+    position: relative;
+    display: inline-block;
+  }
+  
+  .tooltip-content {
+    position: absolute;
+    top: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: #fff;
+    padding: 8px;
+    border-radius: 4px;
+    z-index: 1;
+    white-space: nowrap;
+    display: none;
+  }
+  
+  .tooltip-arrow {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    border: solid transparent;
+    content: " ";
+    height: 0;
+    width: 0;
+    border-bottom-color: #333;
+    border-width: 6px;
+    margin-left: -6px;
+  }
+  
+  .tooltip-container:hover .tooltip-content {
+    display: block;
+  }

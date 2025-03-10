@@ -1,0 +1,181 @@
+
+body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  background: var(--background-color);
+  overflow: hidden; 
+}
+
+h1 {
+  color: var(--primary-text-color)
+}
+
+.app-container {
+  background: var(--background-color);
+  color: #333;
+  transition: background-color 0.3s, color 0.3s;
+  padding: 20px;
+}
+
+.dark-mode {
+  background-color: #333;
+  color: #fff;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toggle-dark-mode-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 24px;
+  color: inherit;
+}
+
+.current-values-container,
+.real-time-graphs-container {
+  display: flex;
+  margin-top: 20px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.current-values-container > div,
+.real-time-graphs-container > div {
+  width: calc(25% - 10px);
+  margin-bottom: 10px;
+}
+
+  .current-values-container > div,
+  .real-time-graphs-container > div {
+    width: calc(30% - 10px);
+  }
+
+  .settings-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .modal-content {
+    background: var(--background-color);
+    padding: 20px;
+    border-radius: 8px;
+    position: relative;
+    width: 80%; /* Set the desired width percentage */
+    max-width: 600px; 
+    height: auto;
+  }
+  
+  .close-button {
+    position: absolute;
+    top: -17px;
+    right: -25px;
+    cursor: pointer;
+    font-size: 20px;
+    color: #333;
+    border-radius: 50%;
+    padding: 5px 10px;
+    color: var(--background-color)
+  }
+.icon-control-group {
+  display: flex;
+  gap: 20px; /* Zde nastavte výchozí mezery mezi ikonami */
+}
+
+.icon-group {
+  display: flex;
+  gap: 10px; /* Mezery mezi ikonami */
+  justify-content: center; /* Horizontální vycentrování všech prvků */
+  align-items: center; /* Vertikální vycentrování všech prvků */
+}
+
+.icon {
+  font-size: 1.3rem; /* Nastavení velikosti větších ikon */
+  color: var(--primary-text-color);
+  position: relative;
+}
+
+.icon:hover::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%; /* nebo jiné vhodné umístění */
+  left: 50%; /* nebo jiné vhodné umístění */
+  transform: translateX(-50%);
+  background-color: #333;
+  color: #fff;
+  padding: 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.icon:hover::after {
+  content: '';
+  position: absolute;
+  top: 100%; /* nebo jiné vhodné umístění */
+  left: 50%; /* nebo jiné vhodné umístění */
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: #333 transparent transparent transparent;
+}
+
+.icon:hover::before,
+.icon:hover::after {
+  opacity: 1;
+}
+
+/* Responzivní styly pro větší obrazovky (např. šířka obrazovky více než 768px) */
+@media screen and (min-width: 768px) {
+  .icon-control-group {
+    gap: 50px; /* Zde nastavte responzivní mezery mezi ikonami pro větší obrazovky */
+  }
+
+  .icon-group {
+    gap: 25px; /* Zde nastavte responzivní mezery mezi ikonami pro větší obrazovky */
+  }
+
+  .icon {
+    font-size: 1.5rem; /* Nastavení velikosti větších ikon */
+    position: relative;
+  }
+
+  .icon-enable {
+    color: var(--foreground-color);
+  }
+
+  .icon::before,
+  .icon::after {
+    position: absolute;
+    content: '';
+    top: -.25rem;
+    height: 25px;
+    width: 25px;
+    background: black;
+  }
+}
