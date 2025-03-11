@@ -37,5 +37,19 @@ const brokerOptions = {
     username: 'simatic',
     password: 'vitkovic1',
     protocol: 'mqtt',
+    keepalive: 60,
+    reconnectPeriod: 1000,
+    connectTimeout: 30 * 1000,
+    clean: true
 };
 exports.mqttClient = mqtt.connect(brokerOptions);
+// Set up error handling
+exports.mqttClient.on('error', (error) => {
+    console.error('MQTT connection error:', error);
+});
+exports.mqttClient.on('reconnect', () => {
+    console.log('MQTT client reconnecting');
+});
+exports.mqttClient.on('close', () => {
+    console.log('MQTT connection closed');
+});

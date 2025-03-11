@@ -58,6 +58,8 @@ const saveData = (data) => __awaiter(void 0, void 0, void 0, function* () {
 const publishInitialMessages = () => {
     const initialPayloads = [
         '{"id": 123, "src": "user_1", "method": "Shelly.GetConfig"}',
+        '{"id": 130, "src": "user_1", "method": "Wifi.GetStatus"}',
+        '{"id": 131, "src": "user_1", "method": "Wifi.GetConfig"}'
     ];
     initialPayloads.forEach((payload, index) => {
         mqtt_1.mqttClient.publish('shelly1/rpc', payload, (error) => {
@@ -114,6 +116,266 @@ app.get('/items', (req, res) => {
 // Get current device state
 app.get('/device/state', (req, res) => {
     res.status(200).json(deviceState);
+});
+// WiFi endpoints
+app.get('/wifi/scan', (req, res) => {
+    // Send MQTT command to scan for WiFi networks
+    const payload = `{"id": 126, "src": "user_1", "method": "Wifi.Scan"}`;
+    // Create a promise to handle the response
+    const scanPromise = new Promise((resolve, reject) => {
+        // Set a timeout to reject the promise after 10 seconds
+        const timeoutId = setTimeout(() => {
+            reject(new Error('WiFi scan timed out'));
+        }, 10000);
+        // Set up a one-time event handler for the scan response
+        const handleScanResponse = (topic, message) => {
+            if (topic === 'user_1/rpc') {
+                try {
+                    const data = JSON.parse(message.toString());
+                    // Check if this is the scan response
+                    if (data.id === 126 && data.result && data.result.results) {
+                        // Clear the timeout
+                        clearTimeout(timeoutId);
+                        // Remove this event handler
+                        mqtt_1.mqttClient.removeListener('message', handleScanResponse);
+                        // Resolve with the scan results
+                        resolve(data.result.results);
+                    }
+                }
+                catch (error) {
+                    console.error('Error parsing scan response:', error);
+                }
+            }
+        };
+        // Add the event handler
+        mqtt_1.mqttClient.on('message', handleScanResponse);
+    });
+    // Send the scan command
+    mqtt_1.mqttClient.publish('shelly1/rpc', payload, (error) => __awaiter(void 0, void 0, void 0, function* () {
+        if (error) {
+            console.error(`Error publishing WiFi scan MQTT message: ${error.message}`);
+            return res.status(500).json({ error: 'Failed to initiate WiFi scan' });
+        }
+        console.log('WiFi scan MQTT message published to shelly1/rpc');
+        try {
+            // Wait for the scan results
+            const scanResults = yield scanPromise;
+            // Transform the results to match the expected format
+            const networks = scanResults.map((network) => ({
+                ssid: network.ssid,
+                rssi: network.rssi,
+                secure: network.auth_mode !== 0 // Auth mode 0 is typically open/unsecured
+            }));
+            res.status(200).json({ networks });
+        }
+        catch (error) {
+            console.error(`WiFi scan error: ${error.message}`);
+            res.status(500).json({ error: 'Failed to complete WiFi scan' });
+        }
+    }));
+});
+app.post('/wifi/connect', (req, res) => {
+    const { ssid, password } = req.body;
+    if (!ssid) {
+        return res.status(400).json({ error: 'SSID is required' });
+    }
+    // Create WiFi configuration object
+    const wifiConfig = {
+        ssid: ssid
+    };
+    // Add password if provided
+    if (password) {
+        wifiConfig.password = password;
+    }
+    // Send MQTT command to configure WiFi
+    const payload = JSON.stringify({
+        id: 127,
+        src: "user_1",
+        method: "Wifi.SetConfig",
+        params: {
+            config: {
+                sta: wifiConfig
+            }
+        }
+    });
+    // Create a promise to handle the response
+    const connectPromise = new Promise((resolve, reject) => {
+        // Set a timeout to reject the promise after 15 seconds
+        const timeoutId = setTimeout(() => {
+            reject(new Error('WiFi connection timed out'));
+        }, 15000);
+        // Set up a one-time event handler for the connection response
+        const handleConnectResponse = (topic, message) => {
+            if (topic === 'user_1/rpc') {
+                try {
+                    const data = JSON.parse(message.toString());
+                    // Check if this is the connection response
+                    if (data.id === 127) {
+                        // Clear the timeout
+                        clearTimeout(timeoutId);
+                        // Remove this event handler
+                        mqtt_1.mqttClient.removeListener('message', handleConnectResponse);
+                        if (data.error) {
+                            reject(new Error(data.error.message || 'Failed to connect to WiFi'));
+                        }
+                        else {
+                            // Update device state with new WiFi name
+                            updateDeviceState({ wifiName: ssid });
+                            resolve(data.result);
+                        }
+                    }
+                }
+                catch (error) {
+                    console.error('Error parsing connect response:', error);
+                }
+            }
+        };
+        // Add the event handler
+        mqtt_1.mqttClient.on('message', handleConnectResponse);
+    });
+    // Send the connect command
+    mqtt_1.mqttClient.publish('shelly1/rpc', payload, (error) => __awaiter(void 0, void 0, void 0, function* () {
+        if (error) {
+            console.error(`Error publishing WiFi connect MQTT message: ${error.message}`);
+            return res.status(500).json({ error: 'Failed to initiate WiFi connection' });
+        }
+        console.log('WiFi connect MQTT message published to shelly1/rpc');
+        try {
+            // Wait for the connection result
+            yield connectPromise;
+            res.status(200).json({ success: true, message: `Connected to ${ssid}` });
+        }
+        catch (error) {
+            console.error(`WiFi connection error: ${error.message}`);
+            res.status(500).json({ error: `Failed to connect to WiFi: ${error.message}` });
+        }
+    }));
+});
+app.post('/wifi/toggle', (req, res) => {
+    const { enable } = req.body;
+    if (typeof enable !== 'boolean') {
+        return res.status(400).json({ error: 'Invalid request. "enable" parameter must be a boolean.' });
+    }
+    // Send MQTT command to enable/disable WiFi
+    const payload = JSON.stringify({
+        id: 128,
+        src: "user_1",
+        method: "Wifi.SetConfig",
+        params: {
+            config: {
+                enable: enable
+            }
+        }
+    });
+    // Create a promise to handle the response
+    const togglePromise = new Promise((resolve, reject) => {
+        // Set a timeout to reject the promise after 5 seconds
+        const timeoutId = setTimeout(() => {
+            reject(new Error('WiFi toggle timed out'));
+        }, 5000);
+        // Set up a one-time event handler for the toggle response
+        const handleToggleResponse = (topic, message) => {
+            if (topic === 'user_1/rpc') {
+                try {
+                    const data = JSON.parse(message.toString());
+                    // Check if this is the toggle response
+                    if (data.id === 128) {
+                        // Clear the timeout
+                        clearTimeout(timeoutId);
+                        // Remove this event handler
+                        mqtt_1.mqttClient.removeListener('message', handleToggleResponse);
+                        if (data.error) {
+                            reject(new Error(data.error.message || 'Failed to toggle WiFi'));
+                        }
+                        else {
+                            // If disabling WiFi, clear the WiFi name
+                            if (!enable) {
+                                updateDeviceState({ wifiName: null });
+                            }
+                            resolve(data.result);
+                        }
+                    }
+                }
+                catch (error) {
+                    console.error('Error parsing toggle response:', error);
+                }
+            }
+        };
+        // Add the event handler
+        mqtt_1.mqttClient.on('message', handleToggleResponse);
+    });
+    // Send the toggle command
+    mqtt_1.mqttClient.publish('shelly1/rpc', payload, (error) => __awaiter(void 0, void 0, void 0, function* () {
+        if (error) {
+            console.error(`Error publishing WiFi toggle MQTT message: ${error.message}`);
+            return res.status(500).json({ error: 'Failed to toggle WiFi' });
+        }
+        console.log('WiFi toggle MQTT message published to shelly1/rpc');
+        try {
+            // Wait for the toggle result
+            yield togglePromise;
+            res.status(200).json({ success: true, message: `WiFi ${enable ? 'enabled' : 'disabled'}` });
+        }
+        catch (error) {
+            console.error(`WiFi toggle error: ${error.message}`);
+            res.status(500).json({ error: `Failed to toggle WiFi: ${error.message}` });
+        }
+    }));
+});
+// Get WiFi status
+app.get('/wifi/status', (req, res) => {
+    // Send MQTT command to get WiFi status
+    const payload = `{"id": 129, "src": "user_1", "method": "Wifi.GetStatus"}`;
+    // Create a promise to handle the response
+    const statusPromise = new Promise((resolve, reject) => {
+        // Set a timeout to reject the promise after 5 seconds
+        const timeoutId = setTimeout(() => {
+            reject(new Error('WiFi status request timed out'));
+        }, 5000);
+        // Set up a one-time event handler for the status response
+        const handleStatusResponse = (topic, message) => {
+            if (topic === 'user_1/rpc') {
+                try {
+                    const data = JSON.parse(message.toString());
+                    // Check if this is the status response
+                    if (data.id === 129) {
+                        // Clear the timeout
+                        clearTimeout(timeoutId);
+                        // Remove this event handler
+                        mqtt_1.mqttClient.removeListener('message', handleStatusResponse);
+                        if (data.error) {
+                            reject(new Error(data.error.message || 'Failed to get WiFi status'));
+                        }
+                        else {
+                            resolve(data.result);
+                        }
+                    }
+                }
+                catch (error) {
+                    console.error('Error parsing status response:', error);
+                }
+            }
+        };
+        // Add the event handler
+        mqtt_1.mqttClient.on('message', handleStatusResponse);
+    });
+    // Send the status command
+    mqtt_1.mqttClient.publish('shelly1/rpc', payload, (error) => __awaiter(void 0, void 0, void 0, function* () {
+        if (error) {
+            console.error(`Error publishing WiFi status MQTT message: ${error.message}`);
+            return res.status(500).json({ error: 'Failed to get WiFi status' });
+        }
+        console.log('WiFi status MQTT message published to shelly1/rpc');
+        try {
+            // Wait for the status result
+            const status = yield statusPromise;
+            res.status(200).json(status);
+        }
+        catch (error) {
+            console.error(`WiFi status error: ${error.message}`);
+            res.status(500).json({ error: `Failed to get WiFi status: ${error.message}` });
+        }
+    }));
 });
 // Toggle device power
 app.post('/device/power', (req, res) => {
