@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { FaLightbulb } from "react-icons/fa";
 import { FiPower, FiZap, FiSettings, FiBluetooth } from "react-icons/fi";
 import { Socket } from 'socket.io-client';
-import axios from 'axios';
 import { 
   Box, 
   Typography, 
@@ -19,117 +18,142 @@ import {
   Button
 } from '@mui/material';
 
-interface ControlPanelProps {
-  isOn: boolean;
-  brightness: number;
-  socket: Socket | null;
+// Define the device state interface based on server's DeviceState
+interface DeviceState {
+  deviceTurnOnOff: boolean;
+  bluetoothEnable: boolean;
+  currentPower?: number;
+  brightness?: number;
+  [key: string]: any; // Allow for other properties
 }
 
-const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness }) => {
-  const [lastValidBrightness, setLastValidBrightness] = useState<number | undefined>(undefined);
+interface ControlPanelProps {
+  socket: Socket | null;
+  isOn?: boolean;
+  brightness?: number;
+}
+
+// Default brightness value if not provided by server
+const DEFAULT_BRIGHTNESS = 50;
+
+const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness: initialBrightness }) => {
+  // Device state from server
+  const [deviceState, setDeviceState] = useState<DeviceState | null>(null);
+  
+  // UI state
+  const [brightness, setBrightness] = useState<number>(initialBrightness || DEFAULT_BRIGHTNESS);
   const [isChanging, setIsChanging] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const theme = useTheme();
 
+  // Show feedback message with auto-hide
+  const showFeedbackMessage = (message: string) => {
+    setFeedbackMessage(message);
+    setShowFeedback(true);
+    setTimeout(() => setShowFeedback(false), 2000);
+  };
+
+  // Listen for real-time updates from server
   useEffect(() => {
-    if (brightness !== undefined && !isNaN(brightness)) {
-      setLastValidBrightness(brightness);
-    }
-  }, [brightness]);
+    if (!socket) return;
 
-  const handleIconClick = async () => {
-    setIsChanging(true);
-    setFeedbackMessage(isOn ? 'Vypínání...' : 'Zapínání...');
-    setShowFeedback(true);
-    
-    try {
-      // Use REST API for device control
-      await axios.post('/device/power', { on: !isOn });
+    // Request initial device state via socket
+    socket.emit('getDeviceState');
+
+    // Listen for device state updates
+    socket.on('updateValues', (updatedState: DeviceState) => {
+      console.log('Received device state update:', updatedState);
+      setDeviceState(updatedState);
       
-      setFeedbackMessage(isOn ? 'Zařízení vypnuto' : 'Zařízení zapnuto');
-      
-      // Also use socket for backward compatibility
-      if (socket) {
-        socket.emit('turnof/on');
+      // Update brightness if available
+      if (updatedState.brightness !== undefined) {
+        setBrightness(updatedState.brightness);
       }
-    } catch (error) {
-      console.error('Error toggling power:', error);
-      setFeedbackMessage('Chyba při přepínání napájení');
-    } finally {
-      setIsChanging(false);
-      // Hide feedback after 2 seconds
-      setTimeout(() => setShowFeedback(false), 2000);
-    }
+    });
+
+    return () => {
+      // Clean up listeners
+      socket.off('updateValues');
+    };
+  }, [socket]);
+
+  const handlePowerToggle = () => {
+    if (!deviceState || !socket) return;
+    
+    setIsChanging(true);
+    const newPowerState = !deviceState.deviceTurnOnOff;
+    showFeedbackMessage(deviceState.deviceTurnOnOff ? 'Vypínání...' : 'Zapínání...');
+    console.log("kek");
+    // Use WebSocket for device control
+    socket.emit('turnof/on');
+    
+    // Update UI immediately for responsiveness
+    setDeviceState({
+      ...deviceState,
+      deviceTurnOnOff: newPowerState
+    });
+    
+    showFeedbackMessage(newPowerState ? 'Zařízení zapnuto' : 'Zařízení vypnuto');
+    setIsChanging(false);
   };
 
-  const handleBrightnessChange = async (_event: Event, newValue: number | number[]) => {
+  const handleBrightnessChange = (_event: Event, newValue: number | number[]) => {
     const newBrightness = Array.isArray(newValue) ? newValue[0] : newValue;
-    setLastValidBrightness(newBrightness);
-    setIsChanging(true);
-    
-    try {
-      // Use REST API for device control
-      await axios.post('/device/brightness', { brightness: newBrightness });
-      
-      setFeedbackMessage(`Jas nastaven na ${newBrightness}%`);
-      setShowFeedback(true);
-      
-      // Also use socket for backward compatibility
-      if (socket) {
-        socket.emit('brightness', newBrightness);
-      }
-    } catch (error) {
-      console.error('Error setting brightness:', error);
-      setFeedbackMessage('Chyba při nastavení jasu');
-    } finally {
-      setIsChanging(false);
-      // Hide feedback after 2 seconds
-      setTimeout(() => setShowFeedback(false), 2000);
-    }
+    setBrightness(newBrightness);
   };
 
-  const handleBluetoothToggle = async () => {
-    setIsChanging(true);
-    setFeedbackMessage('Přepínání Bluetooth...');
-    setShowFeedback(true);
+  const handleBrightnessChangeCommitted = (_event: React.SyntheticEvent | Event, newValue: number | number[]) => {
+    if (!socket) return;
     
-    try {
-      // Use REST API for device control
-      await axios.post('/device/bluetooth', { enable: true });
-      
-      setFeedbackMessage('Bluetooth přepnuto');
-      
-      // Also use socket for backward compatibility
-      if (socket) {
-        socket.emit('bluetooth');
-      }
-    } catch (error) {
-      console.error('Error toggling bluetooth:', error);
-      setFeedbackMessage('Chyba při přepínání Bluetooth');
-    } finally {
-      setIsChanging(false);
-      // Hide feedback after 2 seconds
-      setTimeout(() => setShowFeedback(false), 2000);
-    }
+    const newBrightness = Array.isArray(newValue) ? newValue[0] : newValue;
+    setIsChanging(true);
+    showFeedbackMessage(`Nastavuji jas na ${newBrightness.toFixed(0)}%...`);
+    
+    // Use WebSocket for device control
+    socket.emit('brightness', newBrightness);
+    
+    showFeedbackMessage(`Jas nastaven na ${newBrightness.toFixed(0)}%`);
+    setIsChanging(false);
+  };
+
+  const handleBluetoothToggle = () => {
+    if (!deviceState || !socket) return;
+    
+    setIsChanging(true);
+    const newBluetoothState = !deviceState.bluetoothEnable;
+    showFeedbackMessage('Přepínání Bluetooth...');
+    
+    // Use WebSocket for device control
+    socket.emit('bluetooth');
+    
+    // Update UI immediately for responsiveness
+    setDeviceState({
+      ...deviceState,
+      bluetoothEnable: newBluetoothState
+    });
+    
+    showFeedbackMessage(`Bluetooth ${newBluetoothState ? 'zapnuto' : 'vypnuto'}`);
+    setIsChanging(false);
   };
 
   // Get color based on brightness level
   const getBrightnessColor = () => {
-    if (!lastValidBrightness) return theme.palette.primary.main;
-    
-    if (lastValidBrightness > 75) {
+    if (brightness > 75) {
       return theme.palette.warning.main; // High brightness
-    } else if (lastValidBrightness > 30) {
+    } else if (brightness > 30) {
       return theme.palette.primary.main; // Medium brightness
     } else {
       return theme.palette.info.main; // Low brightness
     }
   };
 
+  // Check if device is on
+  const isDeviceOn = deviceState?.deviceTurnOnOff ?? isOn ?? false;
+
   return (
     <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
-      {lastValidBrightness !== undefined ? (
+      {deviceState ? (
         <Stack spacing={2}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="subtitle1" color="text.secondary" fontWeight="medium">
@@ -151,27 +175,27 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness })
               position: 'relative'
             }}
           >
-            <Tooltip title={isOn ? "Kliknutím vypnete zařízení" : "Kliknutím zapnete zařízení"}>
+            <Tooltip title={isDeviceOn ? "Kliknutím vypnete zařízení" : "Kliknutím zapnete zařízení"}>
               <IconButton 
-                onClick={handleIconClick}
-                color={isOn ? "primary" : "default"}
+                onClick={handlePowerToggle}
+                color={isDeviceOn ? "primary" : "default"}
                 disabled={isChanging}
                 sx={{ 
                   fontSize: '2.5rem',
                   p: 2,
                   transition: 'all 0.3s ease',
-                  boxShadow: isOn ? 3 : 0,
-                  bgcolor: isOn ? 'rgba(25, 118, 210, 0.1)' : 'transparent',
+                  boxShadow: isDeviceOn ? 3 : 0,
+                  bgcolor: isDeviceOn ? 'rgba(25, 118, 210, 0.1)' : 'transparent',
                   '&:hover': {
                     transform: 'scale(1.1)',
-                    bgcolor: isOn ? 'rgba(25, 118, 210, 0.15)' : 'rgba(0, 0, 0, 0.04)'
+                    bgcolor: isDeviceOn ? 'rgba(25, 118, 210, 0.15)' : 'rgba(0, 0, 0, 0.04)'
                   }
                 }}
               >
                 <FaLightbulb 
                   style={{ 
                     fontSize: '2rem',
-                    color: isOn ? getBrightnessColor() : theme.palette.text.disabled
+                    color: isDeviceOn ? getBrightnessColor() : theme.palette.text.disabled
                   }} 
                 />
               </IconButton>
@@ -182,10 +206,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness })
               fontWeight="medium"
               sx={{ 
                 mt: 1,
-                color: isOn ? 'primary.main' : 'text.secondary'
+                color: isDeviceOn ? 'primary.main' : 'text.secondary'
               }}
             >
-              {isOn ? 'Zapnuto' : 'Vypnuto'}
+              {isDeviceOn ? 'Zapnuto' : 'Vypnuto'}
             </Typography>
           </Box>
           
@@ -196,20 +220,21 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness })
                 Jas
               </Typography>
               <Chip 
-                label={`${lastValidBrightness.toFixed(0)}%`} 
+                label={`${brightness.toFixed(0)}%`} 
                 size="small" 
-                color={lastValidBrightness > 75 ? "warning" : "primary"}
+                color={brightness > 75 ? "warning" : "primary"}
                 sx={{ height: 20, '& .MuiChip-label': { px: 1, py: 0.5 } }}
               />
             </Box>
             
             <Slider
-              value={lastValidBrightness}
+              value={brightness}
               onChange={handleBrightnessChange}
+              onChangeCommitted={handleBrightnessChangeCommitted}
               aria-labelledby="brightness-slider"
               min={0}
               max={100}
-              disabled={!isOn || isChanging}
+              disabled={!isDeviceOn || isChanging}
               valueLabelDisplay="auto"
               sx={{ 
                 color: getBrightnessColor(),
@@ -225,22 +250,23 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness })
           <Divider sx={{ mt: 1 }} />
           
           <Box sx={{ display: 'flex', justifyContent: 'space-around', mt: 1 }}>
-            <Tooltip title="Bluetooth">
+            <Tooltip title={deviceState.bluetoothEnable ? "Vypnout Bluetooth" : "Zapnout Bluetooth"}>
               <IconButton 
                 onClick={handleBluetoothToggle}
                 disabled={isChanging}
                 size="small"
+                color={deviceState.bluetoothEnable ? "primary" : "default"}
               >
                 <FiBluetooth />
               </IconButton>
             </Tooltip>
             
-            <Tooltip title="Napájení">
+            <Tooltip title={isDeviceOn ? "Vypnout zařízení" : "Zapnout zařízení"}>
               <IconButton 
-                onClick={handleIconClick}
+                onClick={handlePowerToggle}
                 disabled={isChanging}
                 size="small"
-                color={isOn ? "primary" : "default"}
+                color={isDeviceOn ? "primary" : "default"}
               >
                 <FiPower />
               </IconButton>
@@ -255,6 +281,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness })
               </IconButton>
             </Tooltip>
           </Box>
+          
+          {deviceState.currentPower !== undefined && (
+            <Box sx={{ mt: 1, px: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Aktuální spotřeba: {deviceState.currentPower.toFixed(1)} W
+              </Typography>
+            </Box>
+          )}
         </Stack>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>

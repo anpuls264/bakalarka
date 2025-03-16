@@ -1,6 +1,6 @@
 import { db } from './database';
 
-export interface Item {
+interface Item {
     id: number;
     timestamp: string;
     apower: number;
@@ -9,17 +9,12 @@ export interface Item {
     total: number;
 }
 
-// SQLite callback function interface with lastID property
-interface SQLiteRunCallback {
-    lastID: number;
-}
-
 // CREATE
 const createItem = (timestamp: string, apower: number, voltage: number, current: number, total: number): Promise<{ id: number }> => {
     const sql = 'INSERT INTO DeviceMetrics (timestamp, apower, voltage, current, total) VALUES (?, ?, ?, ?, ?)';
     
     return new Promise<{ id: number }>((resolve, reject) => {
-        db.run(sql, [timestamp, apower, voltage, current, total], function(this: SQLiteRunCallback, err: Error | null) {
+        db.run(sql, [timestamp, apower, voltage, current, total], function (err: Error | null) {
             if (err) {
                 reject(err);
             } else {

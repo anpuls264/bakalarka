@@ -32,9 +32,7 @@
 }
 
 .filter-buttons button.active {
-  background-color: #8884d8;
   color: white;
-  border-color: #8884d8;
 }
 
 .custom-column-tooltip {
