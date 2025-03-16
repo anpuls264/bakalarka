@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { FiMoon, FiSun, FiSettings, FiWifi, FiBluetooth, FiServer, FiEdit } from 'react-icons/fi';
+import { FiMoon, FiSun, FiSettings, FiWifi, FiBluetooth, FiServer, FiEdit, FiList } from 'react-icons/fi';
 import { SiMqtt } from "react-icons/si";
 import { Socket, io } from 'socket.io-client';
 import axios from 'axios';
+import DeviceList from './components/DeviceList';
+import { deviceService } from './services/DeviceService';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { 
   AppBar, 
@@ -53,6 +55,7 @@ const App: React.FC = () => {
   const [deviceTurnOnOf, setDeviceTurnOnOf] = useState(false);
   const [bluetoothEnable, setBluetoothEnable] = useState(false);
   const [mqttEnable, setMqttEnable] = useState(false);
+  const [showDeviceList, setShowDeviceList] = useState(false);
   const [intervalInMilliseconds, setIntervalInMilliseconds] = useState(300000); // 5 minutes as default
   const [editMode, setEditMode] = useState(false);
   
@@ -406,6 +409,15 @@ const App: React.FC = () => {
                 <IntervalSelector onChangeInterval={handleUpdateInterval} />
               </Box>
               
+              <MuiTooltip title="Správa zařízení">
+                <IconButton 
+                  onClick={() => setShowDeviceList(!showDeviceList)} 
+                  color={showDeviceList ? "secondary" : "inherit"}
+                >
+                  <FiList />
+                </IconButton>
+              </MuiTooltip>
+              
               <MuiTooltip title={editMode ? "Exit Edit Mode" : "Edit Dashboard"}>
                 <IconButton 
                   onClick={() => setEditMode(!editMode)} 
@@ -426,15 +438,20 @@ const App: React.FC = () => {
           </Toolbar>
         </AppBar>
 
-        <Container maxWidth="xl">
-          <DashboardLayout 
-            layout={dashboardLayout}
-            onLayoutChange={(newLayout) => {
-              setDashboardLayout(newLayout);
-              localStorage.setItem('dashboardLayout', JSON.stringify(newLayout));
-            }}
-            editMode={editMode}
-          >
+        {showDeviceList ? (
+          <Container maxWidth="lg" sx={{ mt: 3 }}>
+            <DeviceList />
+          </Container>
+        ) : (
+          <Container maxWidth="xl">
+            <DashboardLayout 
+              layout={dashboardLayout}
+              onLayoutChange={(newLayout) => {
+                setDashboardLayout(newLayout);
+                localStorage.setItem('dashboardLayout', JSON.stringify(newLayout));
+              }}
+              editMode={editMode}
+            >
             {/* Control Panel */}
             <div data-id="control-panel">
               <ControlPanel 
@@ -532,8 +549,9 @@ const App: React.FC = () => {
                 den='měsíc' 
               />
             </div>
-          </DashboardLayout>
-        </Container>
+            </DashboardLayout>
+          </Container>
+        )}
 
         {/* Settings Modal */}
         <Modal
