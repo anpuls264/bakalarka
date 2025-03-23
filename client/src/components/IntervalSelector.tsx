@@ -50,10 +50,6 @@ function IntervalSelector({ onChangeInterval }: IntervalSelectorProps) {
       position: 'relative',
       minWidth: 120 
     }}>
-      <Tooltip 
-        title="Nastavte interval agregace dat pro grafy a výpočty" 
-        placement="bottom"
-      >
         <FormControl size="small" fullWidth>
           <InputLabel id="interval-select-label">
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -108,29 +104,6 @@ function IntervalSelector({ onChangeInterval }: IntervalSelectorProps) {
             </MenuItem>
           </Select>
         </FormControl>
-      </Tooltip>
-      
-      {/* Feedback chip */}
-      {showFeedback && (
-        <Chip
-          label={`Interval nastaven na ${formatInterval(interval)}`}
-          color="primary"
-          size="small"
-          sx={{
-            position: 'absolute',
-            top: '100%',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            mt: 1,
-            zIndex: 1,
-            animation: 'fadeIn 0.3s',
-            '@keyframes fadeIn': {
-              '0%': { opacity: 0, transform: 'translate(-50%, -10px)' },
-              '100%': { opacity: 1, transform: 'translate(-50%, 0)' }
-            }
-          }}
-        />
-      )}
     </Box>
   );
 }
