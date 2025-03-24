@@ -1,0 +1,47 @@
+.current-values-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--secondary-background-color);
+  padding: 0px 20px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  height: 150px;
+}
+
+.current-values-container .label {
+  color: var(--secondary-text-color);
+  font-size: 0.9rem;
+}
+
+.current-values-container .value {
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin-bottom: 10px;
+  margin: 0;
+  color: var(--primary-text-color);
+}
+
+.current-values-container .min-max-text {
+  font-size: 0.875rem;
+  color: var(--secondary-text-color);
+  margin-bottom: 5px;
+}
+
+@media screen and (max-width: 768px) {
+  html {
+    font-size: 14px; 
+  }
+
+  .current-values-container .label {
+    font-size: 1rem;
+  }
+
+  .current-values-container .value {
+    font-size: 2.3rem;
+  }
+
+  .current-values-container .min-max-text {
+    font-size: 0.75rem;
+  }
+}

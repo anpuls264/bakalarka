@@ -13,6 +13,7 @@ export type DeviceState = {
     bluetoothEnable: boolean;
     mqttEnable: boolean;
     deviceName?: string;
+    type?: string;
     ledMode?: number;
     powerOnState?: number;
     autoOffTimer?: number;
@@ -22,6 +23,10 @@ export type DeviceState = {
     currentVoltage?: number;
     currentCurrent?: number;
     totalEnergy?: number;
+    // ShellyHT specific properties
+    temperature?: number;
+    humidity?: number;
+    battery?: number;
 }
 
 export type DashboardItemType = 
@@ -29,6 +34,9 @@ export type DashboardItemType =
   | 'current-value-voltage'
   | 'current-value-power'
   | 'current-value-current'
+  | 'current-value-temperature'
+  | 'current-value-humidity'
+  | 'current-value-battery'
   | 'real-time-graph'
   | 'column-chart'
   | 'line-chart'

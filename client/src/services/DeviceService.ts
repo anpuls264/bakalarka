@@ -1,64 +1,95 @@
 import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
+import { Device, DeviceState, DeviceConfig, DeviceCommand } from '../models/Device';
+import { DeviceMetrics } from '../models/Metrics';
 
-export interface Device {
-  id: string;
-  name: string;
-  type: string;
-  state: any;
+// Configuration for the service
+export interface DeviceServiceConfig {
+  serverUrl: string;
+  apiPath: string;
 }
 
-export interface DeviceMetrics {
-  id?: number;
-  deviceId: string;
-  timestamp: string;
-  apower?: number;
-  voltage?: number;
-  current?: number;
-  total?: number;
-  temperature?: number;
-  humidity?: number;
-}
+// Default configuration
+const DEFAULT_CONFIG: DeviceServiceConfig = {
+  serverUrl: 'localhost:3000',
+  apiPath: '/api/devices'
+};
 
 export class DeviceService {
   private socket: Socket;
   private devices: Map<string, Device> = new Map();
-  private listeners: Map<string, Set<(device: Device) => void>> = new Map();
+  private deviceListeners: Map<string, Set<(device: Device) => void>> = new Map();
   private metricsListeners: Set<(metrics: DeviceMetrics) => void> = new Set();
+  private stateListeners: Set<(state: DeviceState) => void> = new Set();
   private baseUrl: string;
+  private apiPath: string;
+  private isConnected: boolean = false;
 
-  constructor(serverUrl: string = '13.61.175.177:3000') {
-    this.baseUrl = `http://${serverUrl}`;
-    this.socket = io(serverUrl);
+  constructor(config: Partial<DeviceServiceConfig> = {}) {
+    const fullConfig = { ...DEFAULT_CONFIG, ...config };
+    this.baseUrl = `http://${fullConfig.serverUrl}`;
+    this.apiPath = fullConfig.apiPath;
     
+    // Initialize Socket.IO connection
+    this.socket = io(fullConfig.serverUrl);
+    
+    // Setup socket event listeners
     this.setupSocketListeners();
     
-    // Načtení všech zařízení při inicializaci
-    this.fetchAllDevices();
+    // Load all devices on initialization
+    this.fetchAllDevices().catch(error => {
+      console.error('Failed to fetch initial devices:', error);
+    });
   }
 
   private setupSocketListeners(): void {
-    // Aktualizace stavu zařízení
-    this.socket.on('updateValues', (deviceState: any) => {
-      // Zpětná kompatibilita - předpokládáme, že jde o výchozí zařízení
-      const device = this.devices.get('shelly1');
+    // Connection status
+    this.socket.on('connect', () => {
+      console.log('Connected to WebSocket server');
+      this.isConnected = true;
+      
+      // Request initial device state
+      this.socket.emit('getDeviceState');
+    });
+    
+    this.socket.on('disconnect', () => {
+      console.log('Disconnected from WebSocket server');
+      this.isConnected = false;
+    });
+    
+    // Device state updates
+    this.socket.on('updateValues', (deviceState: DeviceState) => {
+      console.log('Received device state update:', deviceState);
+      
+      // Notify state listeners
+      this.stateListeners.forEach(listener => {
+        listener(deviceState);
+      });
+      
+      // Update device if it exists in our cache
+      const deviceId = 'shelly1'; // Default device ID for backward compatibility
+      const device = this.devices.get(deviceId);
       if (device) {
         const updatedDevice = { ...device, state: deviceState };
         this.updateDevice(updatedDevice);
       }
     });
     
-    // Nová data z metriky
+    // New metrics data
     this.socket.on('newData', (metrics: DeviceMetrics) => {
-      // Notifikace všech posluchačů
+      console.log('Received new metrics data:', metrics);
+      
+      // Notify all metrics listeners
       this.metricsListeners.forEach(listener => {
         listener(metrics);
       });
     });
     
-    // Počáteční data
+    // Initial metrics data
     this.socket.on('initialData', (metrics: DeviceMetrics[]) => {
-      // Notifikace všech posluchačů pro každou metriku
+      console.log(`Received ${metrics.length} initial metrics`);
+      
+      // Notify all metrics listeners for each metric
       metrics.forEach(metric => {
         this.metricsListeners.forEach(listener => {
           listener(metric);
@@ -70,8 +101,8 @@ export class DeviceService {
   private updateDevice(deviceData: Device): void {
     this.devices.set(deviceData.id, deviceData);
     
-    // Notifikace všech posluchačů
-    const deviceListeners = this.listeners.get(deviceData.id);
+    // Notify device-specific listeners
+    const deviceListeners = this.deviceListeners.get(deviceData.id);
     if (deviceListeners) {
       deviceListeners.forEach(listener => {
         listener(deviceData);
@@ -79,11 +110,17 @@ export class DeviceService {
     }
   }
 
+  // API Methods
+
+  /**
+   * Fetch all devices from the server
+   */
   async fetchAllDevices(): Promise<Device[]> {
     try {
-      const response = await axios.get(`${this.baseUrl}/api/devices`);
+      const response = await axios.get(`${this.baseUrl}${this.apiPath}`);
       const devices = response.data;
       
+      // Update local cache
       for (const device of devices) {
         this.devices.set(device.id, device);
       }
@@ -95,15 +132,18 @@ export class DeviceService {
     }
   }
 
+  /**
+   * Get a specific device by ID
+   */
   async getDevice(id: string): Promise<Device | null> {
-    // Pokud máme zařízení v cache, vrátíme ho
+    // Return from cache if available
     if (this.devices.has(id)) {
       return this.devices.get(id) || null;
     }
     
-    // Jinak načteme z API
+    // Otherwise fetch from API
     try {
-      const response = await axios.get(`${this.baseUrl}/api/devices/${id}`);
+      const response = await axios.get(`${this.baseUrl}${this.apiPath}/${id}`);
       const device = response.data;
       this.devices.set(id, device);
       return device;
@@ -113,9 +153,12 @@ export class DeviceService {
     }
   }
 
+  /**
+   * Execute a command on a device
+   */
   async executeCommand(deviceId: string, command: string, params?: any[]): Promise<any> {
     try {
-      const response = await axios.post(`${this.baseUrl}/api/devices/${deviceId}/command`, {
+      const response = await axios.post(`${this.baseUrl}${this.apiPath}/${deviceId}/command`, {
         command,
         params
       });
@@ -126,31 +169,29 @@ export class DeviceService {
     }
   }
 
-  subscribeToDeviceUpdates(deviceId: string, callback: (device: Device) => void): () => void {
-    if (!this.listeners.has(deviceId)) {
-      this.listeners.set(deviceId, new Set());
-    }
-    
-    this.listeners.get(deviceId)?.add(callback);
-    
-    // Vrátíme funkci pro odhlášení
-    return () => {
-      this.listeners.get(deviceId)?.delete(callback);
-    };
-  }
-
-  subscribeToMetricsUpdates(callback: (metrics: DeviceMetrics) => void): () => void {
-    this.metricsListeners.add(callback);
-    
-    // Vrátíme funkci pro odhlášení
-    return () => {
-      this.metricsListeners.delete(callback);
-    };
-  }
-
-  async getDeviceMetrics(deviceId: string): Promise<DeviceMetrics[]> {
+  /**
+   * Get metrics for a specific device
+   */
+  async getDeviceMetrics(deviceId: string, options?: {
+    startDate?: Date,
+    endDate?: Date,
+    limit?: number
+  }): Promise<DeviceMetrics[]> {
     try {
-      const response = await axios.get(`${this.baseUrl}/api/devices/${deviceId}/metrics`);
+      // Build query parameters
+      const params = new URLSearchParams();
+      if (options?.startDate) {
+        params.append('startDate', options.startDate.toISOString());
+      }
+      if (options?.endDate) {
+        params.append('endDate', options.endDate.toISOString());
+      }
+      if (options?.limit) {
+        params.append('limit', options.limit.toString());
+      }
+      
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      const response = await axios.get(`${this.baseUrl}${this.apiPath}/${deviceId}/metrics${queryString}`);
       return response.data;
     } catch (error) {
       console.error(`Failed to fetch metrics for device ${deviceId}:`, error);
@@ -158,24 +199,33 @@ export class DeviceService {
     }
   }
 
-  // Zpětná kompatibilita pro stávající komponenty
-  togglePower(): void {
-    this.socket.emit('turnof/on');
+  /**
+   * Get aggregated metrics for a specific device
+   */
+  async getAggregatedMetrics(deviceId: string, timeRange: string = 'day', interval: number = 300000): Promise<DeviceMetrics[]> {
+    try {
+      const params = new URLSearchParams({
+        timeRange,
+        interval: interval.toString()
+      });
+      
+      const response = await axios.get(
+        `${this.baseUrl}${this.apiPath}/${deviceId}/metrics/aggregated?${params.toString()}`
+      );
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to fetch aggregated metrics for device ${deviceId}:`, error);
+      return [];
+    }
   }
 
-  toggleBluetooth(): void {
-    this.socket.emit('bluetooth');
-  }
-
-  setBrightness(brightness: number): void {
-    this.socket.emit('brightness', brightness);
-  }
-
-  // Metody pro správu zařízení
+  /**
+   * Add a new device
+   */
   async addDevice(name: string, type: string, mqttTopic: string, capabilities: string[] = []): Promise<Device | null> {
     try {
-      const response = await axios.post(`${this.baseUrl}/api/devices`, {
-        id: `${type}-${Date.now()}`, // Generovat unikátní ID
+      const response = await axios.post(`${this.baseUrl}${this.apiPath}`, {
+        id: `${type}-${Date.now()}`, // Generate unique ID
         name,
         type,
         mqttTopic,
@@ -192,9 +242,12 @@ export class DeviceService {
     }
   }
 
-  async updateDeviceConfig(id: string, updates: { name?: string, mqttTopic?: string, capabilities?: string[] }): Promise<Device | null> {
+  /**
+   * Update a device configuration
+   */
+  async updateDeviceConfig(id: string, updates: Partial<DeviceConfig>): Promise<Device | null> {
     try {
-      const response = await axios.put(`${this.baseUrl}/api/devices/${id}`, updates);
+      const response = await axios.put(`${this.baseUrl}${this.apiPath}/${id}`, updates);
       
       const updatedDevice = response.data;
       this.devices.set(updatedDevice.id, updatedDevice);
@@ -206,12 +259,15 @@ export class DeviceService {
     }
   }
 
+  /**
+   * Delete a device
+   */
   async deleteDevice(id: string): Promise<boolean> {
     try {
-      await axios.delete(`${this.baseUrl}/api/devices/${id}`);
+      await axios.delete(`${this.baseUrl}${this.apiPath}/${id}`);
       
       this.devices.delete(id);
-      this.listeners.delete(id);
+      this.deviceListeners.delete(id);
       
       return true;
     } catch (error) {
@@ -219,7 +275,117 @@ export class DeviceService {
       return false;
     }
   }
+
+  // WebSocket Methods
+
+  /**
+   * Subscribe to device state updates
+   */
+  subscribeToDeviceState(callback: (state: DeviceState) => void): () => void {
+    this.stateListeners.add(callback);
+    
+    // Return unsubscribe function
+    return () => {
+      this.stateListeners.delete(callback);
+    };
+  }
+
+  /**
+   * Subscribe to device updates
+   */
+  subscribeToDeviceUpdates(deviceId: string, callback: (device: Device) => void): () => void {
+    if (!this.deviceListeners.has(deviceId)) {
+      this.deviceListeners.set(deviceId, new Set());
+    }
+    
+    this.deviceListeners.get(deviceId)?.add(callback);
+    
+    // Return unsubscribe function
+    return () => {
+      this.deviceListeners.get(deviceId)?.delete(callback);
+    };
+  }
+
+  /**
+   * Subscribe to metrics updates
+   */
+  subscribeToMetricsUpdates(callback: (metrics: DeviceMetrics) => void): () => void {
+    this.metricsListeners.add(callback);
+    
+    // Return unsubscribe function
+    return () => {
+      this.metricsListeners.delete(callback);
+    };
+  }
+
+  // Device Control Methods
+
+  /**
+   * Toggle device power
+   */
+  togglePower(on?: boolean): void {
+    if (on !== undefined) {
+      // If a specific state is requested, use the API
+      this.executeCommand('shelly1', 'togglePower', [on])
+        .catch(error => console.error('Error toggling power:', error));
+    } else {
+      // Otherwise use the WebSocket for backward compatibility
+      this.socket.emit('turnof/on');
+    }
+  }
+
+  /**
+   * Toggle Bluetooth
+   */
+  toggleBluetooth(enable?: boolean): void {
+    if (enable !== undefined) {
+      // If a specific state is requested, use the API
+      this.executeCommand('shelly1', 'toggleBluetooth', [enable])
+        .catch(error => console.error('Error toggling Bluetooth:', error));
+    } else {
+      // Otherwise use the WebSocket for backward compatibility
+      this.socket.emit('bluetooth');
+    }
+  }
+
+  /**
+   * Set brightness
+   */
+  setBrightness(brightness: number): void {
+    if (!this.isConnected) {
+      console.error('Cannot set brightness: not connected to server');
+      return;
+    }
+
+    console.log("kek");
+    
+    // Use WebSocket for backward compatibility
+    this.socket.emit('brightness', brightness);
+    
+    // Also try the API for newer implementations
+    this.executeCommand('shelly1', 'setBrightness', [brightness])
+      .catch(error => {
+        // Silently fail if the API method is not available
+        if (error.response?.status !== 404) {
+          console.error('Error setting brightness:', error);
+        }
+      });
+  }
+
+  /**
+   * Get the Socket.IO instance for direct access if needed
+   */
+  getSocket(): Socket {
+    return this.socket;
+  }
+
+  /**
+   * Check if connected to the server
+   */
+  isSocketConnected(): boolean {
+    return this.isConnected;
+  }
 }
 
-// Exportovat instanci služby pro použití v celé aplikaci
+// Export a singleton instance for use throughout the application
 export const deviceService = new DeviceService();

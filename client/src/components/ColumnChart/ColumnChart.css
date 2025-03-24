@@ -1,0 +1,87 @@
+.column-chart-container {
+  padding: 10px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.column-chart-container h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 1.2rem;
+  text-align: center;
+}
+
+.filter-buttons {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 15px;
+  gap: 5px;
+}
+
+.filter-buttons button {
+  padding: 5px 10px;
+  border: 1px solid #ccc;
+  background-color: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filter-buttons button:hover {
+  background-color: rgba(136, 132, 216, 0.1);
+}
+
+.filter-buttons button.active {
+  color: white;
+}
+
+.custom-column-tooltip {
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 4px;
+  padding: 10px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  color: #333;
+}
+
+.custom-column-tooltip .period {
+  margin: 0;
+  font-weight: bold;
+}
+
+.custom-column-tooltip .value {
+  margin: 5px 0 0;
+  color: #8884d8;
+  font-weight: bold;
+}
+  
+  .tooltip {
+    border-radius:10px;
+    background-color: #26313c;
+    color: #fff;
+    padding: 0.3rem;
+    box-shadow: 15px 30px 40px 5px rgba(0, 0, 0, 0.5);
+    text-align: center;
+  }
+  
+  .filter-buttons {
+    display: flex;
+    margin-bottom: 10px;
+    justify-content: flex-end;
+  }
+  
+  .filter-buttons button {
+    color: #666; /* Šedý text pro všechna tlačítka */
+    background: none;
+    border: none;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  
+  .filter-buttons button:hover {
+    color: var(--foreground-color); /* Modrý text při najetí myší */
+  }
+  
+  .filter-buttons button.active {
+    border-bottom: 3px solid var(--foreground-color); /* Modrý border-bottom pro aktivní tlačítko */
+    color: var(--foreground-color); /* Modrý text pro aktivní tlačítko */
+  }

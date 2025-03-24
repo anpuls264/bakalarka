@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { FaLightbulb } from "react-icons/fa";
-import { FiPower, FiZap, FiSettings, FiBluetooth } from "react-icons/fi";
-import { Socket } from 'socket.io-client';
+import { FaLightbulb, FaThermometerHalf, FaTint } from "react-icons/fa";
+import { FiPower, FiZap, FiSettings, FiBluetooth, FiBattery } from "react-icons/fi";
+import { deviceService } from '../services/DeviceService';
+import { DeviceState } from '../models/Device';
 import { 
   Box, 
   Typography, 
@@ -18,30 +19,19 @@ import {
   Button
 } from '@mui/material';
 
-// Define the device state interface based on server's DeviceState
-interface DeviceState {
-  deviceTurnOnOff: boolean;
-  bluetoothEnable: boolean;
-  currentPower?: number;
-  brightness?: number;
-  [key: string]: any; // Allow for other properties
-}
-
 interface ControlPanelProps {
-  socket: Socket | null;
-  isOn?: boolean;
-  brightness?: number;
+  deviceId?: string;
 }
 
 // Default brightness value if not provided by server
 const DEFAULT_BRIGHTNESS = 50;
 
-const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness: initialBrightness }) => {
+const ControlPanel: React.FC<ControlPanelProps> = ({ deviceId = 'shelly1' }) => {
   // Device state from server
   const [deviceState, setDeviceState] = useState<DeviceState | null>(null);
   
   // UI state
-  const [brightness, setBrightness] = useState<number>(initialBrightness || DEFAULT_BRIGHTNESS);
+  const [brightness, setBrightness] = useState<number>(DEFAULT_BRIGHTNESS);
   const [isChanging, setIsChanging] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState('');
@@ -56,13 +46,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness: i
 
   // Listen for real-time updates from server
   useEffect(() => {
-    if (!socket) return;
-
-    // Request initial device state via socket
-    socket.emit('getDeviceState');
-
-    // Listen for device state updates
-    socket.on('updateValues', (updatedState: DeviceState) => {
+    // Subscribe to device state updates
+    const unsubscribe = deviceService.subscribeToDeviceState((updatedState) => {
       console.log('Received device state update:', updatedState);
       setDeviceState(updatedState);
       
@@ -72,21 +57,31 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness: i
       }
     });
 
+    // Get initial device state
+    deviceService.getDevice(deviceId).then(device => {
+      if (device) {
+        setDeviceState(device.state);
+        if (device.state.brightness !== undefined) {
+          setBrightness(device.state.brightness);
+        }
+      }
+    });
+
     return () => {
-      // Clean up listeners
-      socket.off('updateValues');
+      // Clean up subscription
+      unsubscribe();
     };
-  }, [socket]);
+  }, [deviceId]);
 
   const handlePowerToggle = () => {
-    if (!deviceState || !socket) return;
+    if (!deviceState) return;
     
     setIsChanging(true);
     const newPowerState = !deviceState.deviceTurnOnOff;
     showFeedbackMessage(deviceState.deviceTurnOnOff ? 'Vypínání...' : 'Zapínání...');
-    console.log("kek");
-    // Use WebSocket for device control
-    socket.emit('turnof/on');
+    
+    // Use device service for control
+    deviceService.togglePower(newPowerState);
     
     // Update UI immediately for responsiveness
     setDeviceState({
@@ -104,28 +99,26 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness: i
   };
 
   const handleBrightnessChangeCommitted = (_event: React.SyntheticEvent | Event, newValue: number | number[]) => {
-    if (!socket) return;
-    
     const newBrightness = Array.isArray(newValue) ? newValue[0] : newValue;
     setIsChanging(true);
     showFeedbackMessage(`Nastavuji jas na ${newBrightness.toFixed(0)}%...`);
     
-    // Use WebSocket for device control
-    socket.emit('brightness', newBrightness);
+    // Use device service for control
+    deviceService.setBrightness(newBrightness);
     
     showFeedbackMessage(`Jas nastaven na ${newBrightness.toFixed(0)}%`);
     setIsChanging(false);
   };
 
   const handleBluetoothToggle = () => {
-    if (!deviceState || !socket) return;
+    if (!deviceState) return;
     
     setIsChanging(true);
     const newBluetoothState = !deviceState.bluetoothEnable;
     showFeedbackMessage('Přepínání Bluetooth...');
     
-    // Use WebSocket for device control
-    socket.emit('bluetooth');
+    // Use device service for control
+    deviceService.toggleBluetooth(newBluetoothState);
     
     // Update UI immediately for responsiveness
     setDeviceState({
@@ -148,8 +141,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness: i
     }
   };
 
-  // Check if device is on
-  const isDeviceOn = deviceState?.deviceTurnOnOff ?? isOn ?? false;
+  // Get device type
+  const deviceType = deviceState?.type || 'shelly-plug-s';
+  const isShellyHT = deviceType === 'shelly-ht';
+  
+  // Check if device is on (only applicable for ShellyPlugS)
+  const isDeviceOn = deviceState?.deviceTurnOnOff ?? false;
 
   return (
     <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -165,129 +162,234 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ socket, isOn, brightness: i
             )}
           </Box>
           
-          <Box 
-            sx={{ 
-              display: 'flex', 
-              flexDirection: 'column',
-              alignItems: 'center', 
-              justifyContent: 'center',
-              py: 1,
-              position: 'relative'
-            }}
-          >
-            <Tooltip title={isDeviceOn ? "Kliknutím vypnete zařízení" : "Kliknutím zapnete zařízení"}>
-              <IconButton 
-                onClick={handlePowerToggle}
-                color={isDeviceOn ? "primary" : "default"}
-                disabled={isChanging}
+          {/* ShellyPlugS Controls */}
+          {!isShellyHT && (
+            <>
+              <Box 
                 sx={{ 
-                  fontSize: '2.5rem',
-                  p: 2,
-                  transition: 'all 0.3s ease',
-                  boxShadow: isDeviceOn ? 3 : 0,
-                  bgcolor: isDeviceOn ? 'rgba(25, 118, 210, 0.1)' : 'transparent',
-                  '&:hover': {
-                    transform: 'scale(1.1)',
-                    bgcolor: isDeviceOn ? 'rgba(25, 118, 210, 0.15)' : 'rgba(0, 0, 0, 0.04)'
-                  }
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  py: 1,
+                  position: 'relative'
                 }}
               >
-                <FaLightbulb 
-                  style={{ 
-                    fontSize: '2rem',
-                    color: isDeviceOn ? getBrightnessColor() : theme.palette.text.disabled
-                  }} 
+                <Tooltip title={isDeviceOn ? "Kliknutím vypnete zařízení" : "Kliknutím zapnete zařízení"}>
+                  <IconButton 
+                    onClick={handlePowerToggle}
+                    color={isDeviceOn ? "primary" : "default"}
+                    disabled={isChanging}
+                    sx={{ 
+                      fontSize: '2.5rem',
+                      p: 2,
+                      transition: 'all 0.3s ease',
+                      boxShadow: isDeviceOn ? 3 : 0,
+                      bgcolor: isDeviceOn ? 'rgba(25, 118, 210, 0.1)' : 'transparent',
+                      '&:hover': {
+                        transform: 'scale(1.1)',
+                        bgcolor: isDeviceOn ? 'rgba(25, 118, 210, 0.15)' : 'rgba(0, 0, 0, 0.04)'
+                      }
+                    }}
+                  >
+                    <FaLightbulb 
+                      style={{ 
+                        fontSize: '2rem',
+                        color: isDeviceOn ? getBrightnessColor() : theme.palette.text.disabled
+                      }} 
+                    />
+                  </IconButton>
+                </Tooltip>
+                
+                <Typography 
+                  variant="h6" 
+                  fontWeight="medium"
+                  sx={{ 
+                    mt: 1,
+                    color: isDeviceOn ? 'primary.main' : 'text.secondary'
+                  }}
+                >
+                  {isDeviceOn ? 'Zapnuto' : 'Vypnuto'}
+                </Typography>
+              </Box>
+              
+              <Box sx={{ px: 1, mt: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    <FiZap style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                    Jas
+                  </Typography>
+                  <Chip 
+                    label={`${brightness.toFixed(0)}%`} 
+                    size="small" 
+                    color={brightness > 75 ? "warning" : "primary"}
+                    sx={{ height: 20, '& .MuiChip-label': { px: 1, py: 0.5 } }}
+                  />
+                </Box>
+                
+                <Slider
+                  value={brightness}
+                  onChange={handleBrightnessChange}
+                  onChangeCommitted={handleBrightnessChangeCommitted}
+                  aria-labelledby="brightness-slider"
+                  min={0}
+                  max={100}
+                  disabled={!isDeviceOn || isChanging}
+                  valueLabelDisplay="auto"
+                  sx={{ 
+                    color: getBrightnessColor(),
+                    '& .MuiSlider-thumb': {
+                      boxShadow: `0px 0px 0px 8px ${theme.palette.mode === 'dark' 
+                        ? 'rgba(144, 202, 249, 0.16)' 
+                        : 'rgba(25, 118, 210, 0.16)'}`
+                    }
+                  }}
                 />
-              </IconButton>
-            </Tooltip>
-            
-            <Typography 
-              variant="h6" 
-              fontWeight="medium"
-              sx={{ 
-                mt: 1,
-                color: isDeviceOn ? 'primary.main' : 'text.secondary'
-              }}
-            >
-              {isDeviceOn ? 'Zapnuto' : 'Vypnuto'}
-            </Typography>
-          </Box>
+              </Box>
+              
+              <Divider sx={{ mt: 1 }} />
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-around', mt: 1 }}>
+                <Tooltip title={deviceState.bluetoothEnable ? "Vypnout Bluetooth" : "Zapnout Bluetooth"}>
+                  <IconButton 
+                    onClick={handleBluetoothToggle}
+                    disabled={isChanging}
+                    size="small"
+                    color={deviceState.bluetoothEnable ? "primary" : "default"}
+                  >
+                    <FiBluetooth />
+                  </IconButton>
+                </Tooltip>
+                
+                <Tooltip title={isDeviceOn ? "Vypnout zařízení" : "Zapnout zařízení"}>
+                  <IconButton 
+                    onClick={handlePowerToggle}
+                    disabled={isChanging}
+                    size="small"
+                    color={isDeviceOn ? "primary" : "default"}
+                  >
+                    <FiPower />
+                  </IconButton>
+                </Tooltip>
+                
+                <Tooltip title="Nastavení">
+                  <IconButton 
+                    disabled={isChanging}
+                    size="small"
+                  >
+                    <FiSettings />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              
+              {deviceState.currentPower !== undefined && (
+                <Box sx={{ mt: 1, px: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Aktuální spotřeba: {deviceState.currentPower.toFixed(1)} W
+                  </Typography>
+                </Box>
+              )}
+            </>
+          )}
           
-          <Box sx={{ px: 1, mt: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                <FiZap style={{ verticalAlign: 'middle', marginRight: '4px' }} />
-                Jas
-              </Typography>
-              <Chip 
-                label={`${brightness.toFixed(0)}%`} 
-                size="small" 
-                color={brightness > 75 ? "warning" : "primary"}
-                sx={{ height: 20, '& .MuiChip-label': { px: 1, py: 0.5 } }}
-              />
-            </Box>
-            
-            <Slider
-              value={brightness}
-              onChange={handleBrightnessChange}
-              onChangeCommitted={handleBrightnessChangeCommitted}
-              aria-labelledby="brightness-slider"
-              min={0}
-              max={100}
-              disabled={!isDeviceOn || isChanging}
-              valueLabelDisplay="auto"
-              sx={{ 
-                color: getBrightnessColor(),
-                '& .MuiSlider-thumb': {
-                  boxShadow: `0px 0px 0px 8px ${theme.palette.mode === 'dark' 
-                    ? 'rgba(144, 202, 249, 0.16)' 
-                    : 'rgba(25, 118, 210, 0.16)'}`
-                }
-              }}
-            />
-          </Box>
-          
-          <Divider sx={{ mt: 1 }} />
-          
-          <Box sx={{ display: 'flex', justifyContent: 'space-around', mt: 1 }}>
-            <Tooltip title={deviceState.bluetoothEnable ? "Vypnout Bluetooth" : "Zapnout Bluetooth"}>
-              <IconButton 
-                onClick={handleBluetoothToggle}
-                disabled={isChanging}
-                size="small"
-                color={deviceState.bluetoothEnable ? "primary" : "default"}
-              >
-                <FiBluetooth />
-              </IconButton>
-            </Tooltip>
-            
-            <Tooltip title={isDeviceOn ? "Vypnout zařízení" : "Zapnout zařízení"}>
-              <IconButton 
-                onClick={handlePowerToggle}
-                disabled={isChanging}
-                size="small"
-                color={isDeviceOn ? "primary" : "default"}
-              >
-                <FiPower />
-              </IconButton>
-            </Tooltip>
-            
-            <Tooltip title="Nastavení">
-              <IconButton 
-                disabled={isChanging}
-                size="small"
-              >
-                <FiSettings />
-              </IconButton>
-            </Tooltip>
-          </Box>
-          
-          {deviceState.currentPower !== undefined && (
-            <Box sx={{ mt: 1, px: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Aktuální spotřeba: {deviceState.currentPower.toFixed(1)} W
-              </Typography>
-            </Box>
+          {/* ShellyHT Controls */}
+          {isShellyHT && (
+            <>
+              <Box sx={{ 
+                display: 'flex', 
+                flexDirection: 'column',
+                alignItems: 'center', 
+                justifyContent: 'center',
+                py: 1
+              }}>
+                <Box sx={{ display: 'flex', gap: 4, mb: 2 }}>
+                  {/* Temperature Display */}
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Tooltip title="Teplota">
+                      <IconButton 
+                        color="primary"
+                        sx={{ 
+                          p: 2,
+                          bgcolor: 'rgba(25, 118, 210, 0.1)',
+                          mb: 1
+                        }}
+                      >
+                        <FaThermometerHalf style={{ fontSize: '1.5rem' }} />
+                      </IconButton>
+                    </Tooltip>
+                    <Typography variant="h6" fontWeight="medium" color="primary.main">
+                      {deviceState.temperature?.toFixed(1) || '0'}°C
+                    </Typography>
+                  </Box>
+                  
+                  {/* Humidity Display */}
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Tooltip title="Vlhkost">
+                      <IconButton 
+                        color="info"
+                        sx={{ 
+                          p: 2,
+                          bgcolor: 'rgba(3, 169, 244, 0.1)',
+                          mb: 1
+                        }}
+                      >
+                        <FaTint style={{ fontSize: '1.5rem' }} />
+                      </IconButton>
+                    </Tooltip>
+                    <Typography variant="h6" fontWeight="medium" color="info.main">
+                      {deviceState.humidity?.toFixed(1) || '0'}%
+                    </Typography>
+                  </Box>
+                </Box>
+                
+                {/* Battery Status */}
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  mt: 2,
+                  p: 1,
+                  borderRadius: 1,
+                  bgcolor: 'background.paper',
+                  boxShadow: 1
+                }}>
+                  <FiBattery style={{ marginRight: '8px', color: theme.palette.success.main }} />
+                  <Typography variant="body1" color="text.primary">
+                    Baterie: <strong>{deviceState.battery || 0}%</strong>
+                  </Typography>
+                </Box>
+              </Box>
+              
+              <Divider sx={{ mt: 1 }} />
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-around', mt: 1 }}>
+                <Tooltip title={deviceState.bluetoothEnable ? "Vypnout Bluetooth" : "Zapnout Bluetooth"}>
+                  <IconButton 
+                    onClick={handleBluetoothToggle}
+                    disabled={isChanging}
+                    size="small"
+                    color={deviceState.bluetoothEnable ? "primary" : "default"}
+                  >
+                    <FiBluetooth />
+                  </IconButton>
+                </Tooltip>
+                
+                <Tooltip title="Nastavení">
+                  <IconButton 
+                    disabled={isChanging}
+                    size="small"
+                  >
+                    <FiSettings />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              
+              <Box sx={{ mt: 1, px: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Poslední aktualizace: {new Date().toLocaleTimeString()}
+                </Typography>
+              </Box>
+            </>
           )}
         </Stack>
       ) : (

@@ -1,0 +1,36 @@
+.header-container {
+  margin-bottom: 24px;
+}
+
+.header-toolbar {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.header-title {
+  flex-grow: 1;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .header-actions {
+    gap: 4px;
+  }
+  
+  .header-interval-selector {
+    margin-left: 8px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-title {
+    font-size: 1.1rem;
+  }
+}
