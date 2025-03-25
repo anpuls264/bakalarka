@@ -1,0 +1,40 @@
+/* src/components/TemperatureHumidityGraph/TemperatureHumidityGraph.css */
+.temperature-humidity-graph {
+  width: 100%;
+  height: 100%;
+}
+
+.temperature-humidity-graph-container {
+  width: 100%;
+  height: 400px;
+}
+
+.temperature-humidity-graph-tooltip {
+  background-color: #fff;
+  border-radius: 4px;
+  padding: 10px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+.temperature-humidity-graph-stats {
+  margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+}
+
+.temperature-humidity-graph-stat-item {
+  text-align: center;
+  padding: 8px;
+}
+
+.temperature-humidity-graph-stat-label {
+  font-size: 0.75rem;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.temperature-humidity-graph-stat-value {
+  font-size: 1rem;
+  font-weight: bold;
+}

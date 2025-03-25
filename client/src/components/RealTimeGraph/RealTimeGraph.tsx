@@ -1,5 +1,5 @@
 // src/components/RealTimeGraph/RealTimeGraph.tsx
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Box, Paper, Typography, useTheme } from '@mui/material';
 import {
   ResponsiveContainer,
@@ -20,56 +20,92 @@ import StatsDisplay from './StatsDisplay';
 import { useRealTimeData } from './useRealTimeData';
 
 interface RealTimeGraphProps {
-  data: any[];
+  deviceId: string;
 }
 
-const RealTimeGraph: React.FC<RealTimeGraphProps> = ({ data }) => {
+const paperStyles = {
+  borderRadius: 2,
+  p: 2.5,
+  width: '100%',
+  height: '100%',
+  boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
+};
+
+const chartContainerStyles = { 
+  width: '100%', 
+  height: 400 
+};
+
+const titleStyles = { 
+  mb: 2 
+};
+
+const RealTimeGraph: React.FC<RealTimeGraphProps> = ({ deviceId }) => {
   const theme = useTheme();
   const [timeRange, setTimeRange] = useState<TimeRange>(TimeRange.DAY);
   
-  const { processedData, stats, highlightedArea } = useRealTimeData(data, timeRange);
+  const { processedData, stats, highlightedArea, loading, error } = useRealTimeData(deviceId, timeRange);
 
-  // Barvy pro grafy - respektování tématu
-  const chartColors = {
+  // Memoize chart colors
+  const chartColors = useMemo(() => ({
     current: '#FF5733',
     apower: theme.palette.primary.main,
     voltage: theme.palette.secondary.main,
     gridOpacity: 0.1,
     background: theme.palette.background.paper
-  };
+  }), [theme.palette.primary.main, theme.palette.secondary.main, theme.palette.background.paper]);
+
+  // Memoize time range change handler
+  const handleTimeRangeChange = useCallback((newRange: TimeRange) => {
+    setTimeRange(newRange);
+  }, []);
+
+  // Memoize paper background style based on theme
+  const paperBgStyle = useMemo(() => ({
+    bgcolor: theme.palette.mode === 'dark' 
+      ? 'rgba(255, 255, 255, 0.05)' 
+      : 'rgba(0, 0, 0, 0.02)'
+  }), [theme.palette.mode]);
+
+  if (loading) {
+    return (
+      <Paper elevation={1} sx={{ ...paperStyles, ...paperBgStyle, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <Typography>Načítání dat...</Typography>
+      </Paper>
+    );
+  }
+
+  if (error) {
+    return (
+      <Paper elevation={1} sx={{ ...paperStyles, ...paperBgStyle, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <Typography color="error">Chyba při načítání dat: {error}</Typography>
+      </Paper>
+    );
+  }
 
   return (
     <Paper
       elevation={1}
-      sx={{
-        borderRadius: 2,
-        p: 2.5,
-        bgcolor: theme.palette.mode === 'dark' 
-          ? 'rgba(255, 255, 255, 0.05)' 
-          : 'rgba(0, 0, 0, 0.02)',
-        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
-        width: '100%',
-        height: '100%'
-      }}
+      sx={{ ...paperStyles, ...paperBgStyle }}
     >
       <Typography 
         variant="h6" 
         align="center" 
         gutterBottom
-        sx={{ mb: 2 }}
+        sx={titleStyles}
       >
         {getChartTitle(timeRange)}
       </Typography>
       
       <TimeRangeSelector 
         currentRange={timeRange} 
-        onRangeChange={setTimeRange} 
+        onRangeChange={handleTimeRangeChange} 
         showMax={true}
       />
       
       <StatsDisplay stats={stats} />
       
-      <Box sx={{ width: '100%', height: 400 }}>
+      <Box sx={chartContainerStyles}>
         <ResponsiveContainer>
           <AreaChart
             data={processedData}

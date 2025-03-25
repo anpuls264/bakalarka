@@ -1,42 +1,83 @@
-import { useMemo } from 'react';
-import { ChartItem, TimeRange, getTimeRangeInMs } from '../common/ChartUtils';
-import { groupDataByTimeRange } from './ColumnChartUtils';
+import { useState, useEffect, useMemo } from 'react';
+import { TimeRange, getTimeRangeInMs } from '../common/ChartUtils';
+import { deviceService } from '../../services/DeviceService';
 
-export const useColumnChartData = (data: ChartItem[], timeRange: TimeRange) => {
-  // Filtrovat data podle časového rozsahu
-  const filteredData = useMemo(() => {
-    const currentTime = new Date().getTime();
-    const rangeInMs = getTimeRangeInMs(timeRange);
-    const startTime = currentTime - rangeInMs;
-    
-    return data.filter((entry) => {
-      const entryTime = new Date(entry.timestamp).getTime();
-      return entryTime >= startTime && entryTime <= currentTime;
-    });
-  }, [data, timeRange]);
+interface ChartDataItem {
+  time: string;
+  total: number;
+}
 
-  // Seskupit data podle časového rozsahu
-  const groupedData = useMemo(() => {
-    return groupDataByTimeRange(filteredData, timeRange);
-  }, [filteredData, timeRange]);
+export const useColumnChartData = (deviceId: string, timeRange: TimeRange) => {
+  const [groupedData, setGroupedData] = useState<ChartDataItem[]>([]);
+  const [averageConsumption, setAverageConsumption] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Vypočítat průměrnou spotřebu
-  const averageConsumption = useMemo(() => {
-    if (groupedData.length === 0) return 0;
-    const sum = groupedData.reduce((acc, item) => acc + item.total, 0);
-    return sum / groupedData.length;
-  }, [groupedData]);
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const currentTime = new Date();
+        const rangeInMs = getTimeRangeInMs(timeRange);
+        const startTime = new Date(currentTime.getTime() - rangeInMs);
+
+        // Použít server-side filtrování a agregaci
+        let groupBy: 'hour' | 'day' | 'month';
+        switch (timeRange) {
+          case TimeRange.DAY:
+            groupBy = 'hour';
+            break;
+          case TimeRange.WEEK:
+            groupBy = 'day';
+            break;
+          case TimeRange.MONTH:
+            groupBy = 'month';
+            break;
+          default:
+            groupBy = 'hour';
+        }
+
+        const data = await deviceService.getDeviceMetrics(deviceId, {
+          startDate: startTime,
+          endDate: currentTime,
+          groupBy
+        });
+
+        // Data jsou již seskupena na serveru
+        // Data jsou již seskupena na serveru ve správném formátu
+        setGroupedData(data.map(item => ({
+          time: item.time || '',
+          total: item.total || 0
+        })));
+
+        // Vypočítat průměrnou spotřebu
+        if (data.length > 0) {
+          const sum = data.reduce((acc, item) => acc + (item.total || 0), 0);
+          setAverageConsumption(sum / data.length);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch data');
+        console.error('Error fetching column chart data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [deviceId, timeRange]);
 
   // Nastavení vlastností pro chart
-  const chartProperties = useMemo(() => {
-    return {
-      barSize: timeRange === TimeRange.MONTH ? 15 : 30,
-    };
-  }, [timeRange]);
+  const chartProperties = useMemo(() => ({
+    barSize: timeRange === TimeRange.MONTH ? 15 : 30,
+  }), [timeRange]);
 
   return {
     groupedData,
     averageConsumption,
-    chartProperties
+    chartProperties,
+    loading,
+    error
   };
 };

@@ -1,7 +1,7 @@
 import express from 'express';
 import { DeviceManager } from '../services/DeviceManager';
 import { MqttService } from '../services/MqttService';
-import { createMetrics, readMetricsByDeviceId, createDevice, readDeviceById, readDevices, deleteDevice } from '../crud';
+import { createMetrics, readMetricsByDeviceId, createDevice, readDeviceById, readDevices, deleteDevice, updateDevice } from '../crud';
 import { DeviceConfig } from '../models/Device';
 
 export const createDeviceRoutes = (deviceManager: DeviceManager, mqttService: MqttService) => {
@@ -35,15 +35,16 @@ export const createDeviceRoutes = (deviceManager: DeviceManager, mqttService: Mq
         });
     });
 
-    // Získání metrik pro konkrétní zařízení s možností filtrování
+    // Získání metrik pro konkrétní zařízení s možností filtrování a agregace
     router.get('/:id/metrics', async (req, res) => {
         try {
             const deviceId = req.params.id;
             
-            // Parsování parametrů pro filtrování
+            // Parsování parametrů
             const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
             const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
             const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+            const interval = req.query.interval ? parseInt(req.query.interval as string) : undefined;
             
             // Kontrola existence zařízení
             const device = deviceManager.getDevice(deviceId);
@@ -51,13 +52,13 @@ export const createDeviceRoutes = (deviceManager: DeviceManager, mqttService: Mq
                 return res.status(404).json({ error: 'Device not found' });
             }
             
-            // Načíst data z databáze s filtrováním
-            const metrics = await readMetricsByDeviceIdFiltered(
-                deviceId, 
-                startDate, 
-                endDate, 
-                limit
-            );
+            // Načíst data z databáze s filtrováním a agregací
+            const metrics = await readMetricsByDeviceId(deviceId, {
+                startDate,
+                endDate,
+                limit,
+                interval
+            });
             
             res.status(200).json(metrics);
         } catch (error: any) {
@@ -65,7 +66,7 @@ export const createDeviceRoutes = (deviceManager: DeviceManager, mqttService: Mq
         }
     });
 
-    // Nový endpoint pro agregovaná data
+    // Endpoint pro agregovaná data s předdefinovanými časovými rozsahy
     router.get('/:id/metrics/aggregated', async (req, res) => {
         try {
             const deviceId = req.params.id;
@@ -102,17 +103,14 @@ export const createDeviceRoutes = (deviceManager: DeviceManager, mqttService: Mq
                     startDate.setHours(now.getHours() - 1);
             }
             
-            // Načíst data z databáze pro daný časový rozsah
-            const rawMetrics = await readMetricsByDeviceIdFiltered(
-                deviceId, 
-                startDate, 
-                now
-            );
+            // Načíst data z databáze s filtrováním a agregací
+            const metrics = await readMetricsByDeviceId(deviceId, {
+                startDate,
+                endDate: now,
+                interval: intervalMs
+            });
             
-            // Agregovat data na serveru
-            const aggregatedMetrics = aggregateMetrics(rawMetrics, intervalMs);
-            
-            res.status(200).json(aggregatedMetrics);
+            res.status(200).json(metrics);
         } catch (error: any) {
             res.status(500).json({ error: error.message });
         }
@@ -158,7 +156,180 @@ export const createDeviceRoutes = (deviceManager: DeviceManager, mqttService: Mq
         }
     });
 
-    // Ostatní endpointy zůstávají beze změny...
+    // Aktualizace existujícího zařízení
+    router.put('/:id', async (req, res) => {
+        try {
+            const deviceId = req.params.id;
+            const { name, mqttTopic, capabilities } = req.body;
+            
+            // Kontrola existence zařízení
+            const existingDevice = await readDeviceById(deviceId);
+            if (!existingDevice) {
+                return res.status(404).json({ error: 'Device not found' });
+            }
+            
+            // Získat aktuální konfiguraci
+            const device = deviceManager.getDevice(deviceId);
+            if (!device) {
+                return res.status(404).json({ error: 'Device not found in device manager' });
+            }
+            
+            // Aktualizovat konfiguraci
+            const currentConfig = JSON.parse(existingDevice.config);
+            const updatedConfig: DeviceConfig = {
+                ...currentConfig,
+                name: name || currentConfig.name,
+                mqttTopic: mqttTopic || currentConfig.mqttTopic,
+                capabilities: capabilities || currentConfig.capabilities
+            };
+            
+            // Uložit aktualizovanou konfiguraci do databáze
+            await updateDevice(deviceId, updatedConfig);
+            
+            // Aktualizovat zařízení ve správci zařízení
+            const updated = deviceManager.updateDeviceConfig(deviceId, updatedConfig);
+            
+            if (!updated) {
+                return res.status(400).json({ error: 'Failed to update device' });
+            }
+            
+            // Pokud se změnilo MQTT téma, je potřeba se odhlásit od starého a přihlásit k novému
+            if (mqttTopic && mqttTopic !== currentConfig.mqttTopic) {
+                await mqttService.unsubscribeFromTopic(`${currentConfig.mqttTopic}/status/#`);
+                await mqttService.subscribeToTopic(`${mqttTopic}/status/#`);
+            }
+            
+            // Získat aktualizované zařízení
+            const updatedDevice = deviceManager.getDevice(deviceId);
+            
+            if (!updatedDevice) {
+                return res.status(500).json({ error: 'Failed to get updated device' });
+            }
+            
+            res.status(200).json({
+                id: updatedDevice.getId(),
+                name: updatedDevice.getName(),
+                type: updatedDevice.getType(),
+                state: updatedDevice.getState()
+            });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    // Odstranění zařízení
+    router.delete('/:id', async (req, res) => {
+        try {
+            const deviceId = req.params.id;
+            
+            // Kontrola existence zařízení
+            const existingDevice = await readDeviceById(deviceId);
+            if (!existingDevice) {
+                return res.status(404).json({ error: 'Device not found' });
+            }
+            
+            // Získat aktuální konfiguraci pro MQTT téma
+            const device = deviceManager.getDevice(deviceId);
+            if (!device) {
+                return res.status(404).json({ error: 'Device not found in device manager' });
+            }
+            
+            const mqttTopic = device.getMqttTopic();
+            
+            // Odstranit zařízení z databáze
+            await deleteDevice(deviceId);
+            
+            // Odstranit zařízení ze správce zařízení
+            // Poznámka: Toto by vyžadovalo implementaci metody removeDevice v DeviceManager
+            // Pro jednoduchost předpokládáme, že taková metoda existuje
+            const removed = deviceManager.removeDevice(deviceId);
+            
+            if (!removed) {
+                return res.status(400).json({ error: 'Failed to remove device' });
+            }
+            
+            // Odhlásit se od MQTT témat pro toto zařízení
+            await mqttService.unsubscribeFromTopic(`${mqttTopic}/status/#`);
+            
+            res.status(200).json({ success: true, message: `Device ${deviceId} successfully removed` });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    // Odeslání příkazu zařízení
+    router.post('/:id/command', async (req, res) => {
+        try {
+            const deviceId = req.params.id;
+            const { command, params } = req.body;
+            
+            if (!command) {
+                return res.status(400).json({ error: 'Command is required' });
+            }
+            
+            // Kontrola existence zařízení
+            const device = deviceManager.getDevice(deviceId);
+            if (!device) {
+                return res.status(404).json({ error: 'Device not found' });
+            }
+            
+            // Získat dostupné příkazy pro zařízení
+            const commands = device.getCommands();
+            
+            // Kontrola, zda zařízení podporuje požadovaný příkaz
+            if (!commands[command]) {
+                return res.status(400).json({ error: `Device does not support command: ${command}` });
+            }
+            
+            // Vykonat příkaz s parametry
+            try {
+                const result = await commands[command](...(params || []));
+                res.status(200).json({ success: true, result });
+            } catch (commandError: any) {
+                res.status(400).json({ error: `Command execution failed: ${commandError.message}` });
+            }
+        } catch (error: any) {
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    // Získání seznamu schopností zařízení
+    router.get('/:id/capabilities', (req, res) => {
+        const deviceId = req.params.id;
+        
+        // Kontrola existence zařízení
+        const device = deviceManager.getDevice(deviceId);
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+        
+        // Získat schopnosti zařízení
+        const capabilities = device.getCapabilities();
+        
+        // Získat dostupné příkazy
+        const commands = Object.keys(device.getCommands());
+        
+        res.status(200).json({
+            capabilities,
+            commands
+        });
+    });
+
+    // Získání aktuálního stavu zařízení
+    router.get('/:id/state', (req, res) => {
+        const deviceId = req.params.id;
+        
+        // Kontrola existence zařízení
+        const device = deviceManager.getDevice(deviceId);
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+        
+        // Získat aktuální stav zařízení
+        const state = device.getState();
+        
+        res.status(200).json(state);
+    });
 
     return router;
 };

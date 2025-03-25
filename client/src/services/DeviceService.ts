@@ -175,7 +175,9 @@ export class DeviceService {
   async getDeviceMetrics(deviceId: string, options?: {
     startDate?: Date,
     endDate?: Date,
-    limit?: number
+    limit?: number,
+    interval?: number,
+    groupBy?: 'hour' | 'day' | 'week' | 'month'
   }): Promise<DeviceMetrics[]> {
     try {
       // Build query parameters
@@ -190,6 +192,12 @@ export class DeviceService {
         params.append('limit', options.limit.toString());
       }
       
+      if (options?.interval) {
+        params.append('interval', options.interval.toString());
+      }
+      if (options?.groupBy) {
+        params.append('groupBy', options.groupBy);
+      }
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const response = await axios.get(`${this.baseUrl}${this.apiPath}/${deviceId}/metrics${queryString}`);
       return response.data;

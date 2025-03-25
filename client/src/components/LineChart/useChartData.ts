@@ -1,29 +1,21 @@
-// components/LineChart/useChartData.ts
-import { useMemo } from 'react';
-import { ChartItem, TimeRange, getTimeRangeInMs } from '../common/ChartUtils';
+import { useState, useEffect, useMemo } from 'react';
+import { ChartItem, TimeRange, getTimeRangeInMs, getItemTimestamp } from '../common/ChartUtils';
+import { deviceService } from '../../services/DeviceService';
 
-export const useChartData = (data: ChartItem[], timeRange: TimeRange, movingAvgWindow = 5) => {
-  // Filtruj data podle časového rozsahu
-  const filteredData = useMemo(() => {
-    const currentTime = new Date().getTime();
-    const rangeInMs = getTimeRangeInMs(timeRange);
-    const startTime = rangeInMs === Infinity ? 0 : currentTime - rangeInMs;
-    
-    return data.filter((entry) => {
-      const entryTime = new Date(entry.timestamp).getTime();
-      return entryTime >= startTime && entryTime <= currentTime;
-    });
-  }, [data, timeRange]);
+export const useChartData = (deviceId: string, timeRange: TimeRange, movingAvgWindow = 5) => {
+  const [rawData, setRawData] = useState<ChartItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Vypočítej průměrný výkon
+  // Calculate average power
   const averagePower = useMemo(() => {
-    if (filteredData.length === 0) return 0;
-    return filteredData.reduce((sum, item) => sum + (item.apower || 0), 0) / filteredData.length;
-  }, [filteredData]);
+    if (rawData.length === 0) return 0;
+    return rawData.reduce((sum, item) => sum + (item.apower || 0), 0) / rawData.length;
+  }, [rawData]);
 
-  // Vypočítej klouzavý průměr
-  const dataWithMovingAverage = useMemo(() => {
-    return filteredData.map((item, index, array) => {
+  // Calculate moving average
+  const processedData = useMemo(() => {
+    return rawData.map((item, index, array) => {
       if (index < movingAvgWindow - 1) return { ...item };
       
       let sum = 0;
@@ -36,10 +28,43 @@ export const useChartData = (data: ChartItem[], timeRange: TimeRange, movingAvgW
         movingAvg: sum / movingAvgWindow
       };
     });
-  }, [filteredData, movingAvgWindow]);
+  }, [rawData, movingAvgWindow]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const currentTime = new Date();
+        const rangeInMs = getTimeRangeInMs(timeRange);
+        const startTime = rangeInMs === Infinity ? 
+          new Date(0) : 
+          new Date(currentTime.getTime() - rangeInMs);
+
+        // Použít server-side filtrování a agregaci
+        const data = await deviceService.getDeviceMetrics(deviceId, {
+          startDate: startTime,
+          endDate: currentTime,
+          interval: Math.ceil(rangeInMs / 100) // Interval pro agregaci na serveru
+        });
+
+        setRawData(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch data');
+        console.error('Error fetching line chart data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [deviceId, timeRange, movingAvgWindow]);
 
   return {
-    processedData: dataWithMovingAverage,
-    averagePower
+    processedData,
+    averagePower,
+    loading,
+    error
   };
 };

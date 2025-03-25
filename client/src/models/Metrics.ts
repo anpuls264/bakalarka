@@ -1,7 +1,10 @@
+import { getItemTimestamp } from '../components/common/ChartUtils';
+
 export interface DeviceMetrics {
   id?: number;
   deviceId: string;
-  timestamp: string;
+  timestamp: string;  // Make timestamp required
+  time?: string;  // For grouped data (e.g., "12:00", "Po", "15")
   apower?: number;
   voltage?: number;
   current?: number;
@@ -32,7 +35,7 @@ export const calculateTotal = (metrics: DeviceMetrics[], timePeriod: TimeRange):
     case 'hour':
       return metrics
         .filter(item => {
-          const itemTime = new Date(item.timestamp);
+          const itemTime = getItemTimestamp(item);
           const hourAgo = new Date(currentTime.getTime() - 60 * 60 * 1000);
           return itemTime > hourAgo && itemTime <= currentTime;
         })
@@ -41,7 +44,7 @@ export const calculateTotal = (metrics: DeviceMetrics[], timePeriod: TimeRange):
     case 'day':
       return metrics
         .filter(item => {
-          const itemTime = new Date(item.timestamp);
+          const itemTime = getItemTimestamp(item);
           const dayAgo = new Date(currentTime.getTime() - 24 * 60 * 60 * 1000);
           return itemTime > dayAgo && itemTime <= currentTime;
         })
@@ -50,7 +53,7 @@ export const calculateTotal = (metrics: DeviceMetrics[], timePeriod: TimeRange):
     case 'week':
       return metrics
         .filter(item => {
-          const itemTime = new Date(item.timestamp);
+          const itemTime = getItemTimestamp(item);
           const weekAgo = new Date(currentTime.getTime() - 7 * 24 * 60 * 60 * 1000);
           return itemTime > weekAgo && itemTime <= currentTime;
         })
@@ -60,7 +63,7 @@ export const calculateTotal = (metrics: DeviceMetrics[], timePeriod: TimeRange):
       const currentMonth = currentTime.getMonth();
       return metrics
         .filter(item => {
-          const itemTime = new Date(item.timestamp);
+          const itemTime = getItemTimestamp(item);
           return itemTime.getMonth() === currentMonth && itemTime <= currentTime;
         })
         .reduce((acc, curr) => safeAdd(acc, curr.total || 0), 0);
@@ -76,7 +79,7 @@ export const aggregateMetricsByInterval = (metrics: DeviceMetrics[], interval: n
     return [];
   }
 
-  let startTime = new Date(metrics[0].timestamp).getTime();
+  let startTime = getItemTimestamp(metrics[0]).getTime();
   let endTime = startTime + interval;
 
   const aggregatedMetrics: DeviceMetrics[] = [];
@@ -91,7 +94,7 @@ export const aggregateMetricsByInterval = (metrics: DeviceMetrics[], interval: n
   let validTotalCount = 0;
 
   for (const item of metrics) {
-    const itemTime = new Date(item.timestamp).getTime();
+    const itemTime = getItemTimestamp(item).getTime();
     if (itemTime >= startTime && itemTime <= endTime) {
       // Only add valid values to the sum
       if (!isNaN(item.apower || 0)) {

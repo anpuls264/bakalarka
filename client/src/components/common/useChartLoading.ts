@@ -1,18 +1,33 @@
 // src/components/common/useChartLoading.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-export const useChartLoading = (data: any[]) => {
+interface ChartData {
+  timestamp: string;
+  [key: string]: any;
+}
+
+export const useChartLoading = (data: ChartData[]) => {
   const [loading, setLoading] = useState(true);
+  const initialLoadRef = useRef(true);
   
   useEffect(() => {
-    // Inicializace jako načítající
-    setLoading(true);
+    // Skip loading state for subsequent data updates
+    if (!initialLoadRef.current && data !== undefined) {
+      setLoading(false);
+      return;
+    }
     
-    // Simulace načítání na začátku nebo při změně dat
+    // Show loading state only on initial load or when data becomes undefined
+    if (data === undefined) {
+      setLoading(true);
+      return;
+    }
+    
+    // Initial load with minimum display time
     const timer = setTimeout(() => {
-      // Pokud máme data nebo explicitně prázdné pole, už nenačítáme
-      setLoading(data === undefined);
-    }, 1000); // Dáme uživateli aspoň 1 vteřinu, aby viděl skeletony
+      setLoading(false);
+      initialLoadRef.current = false;
+    }, 1000);
     
     return () => clearTimeout(timer);
   }, [data]);

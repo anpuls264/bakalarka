@@ -10,8 +10,17 @@ export enum TimeRange {
 }
 
 export interface ChartItem {
-  timestamp: string;
+  timestamp?: string;
+  time?: string;
   [key: string]: any;
+}
+
+export interface ChartItemWithTimestamp extends ChartItem {
+  timestamp: string;
+}
+
+export interface ChartItemWithTime extends ChartItem {
+  time: string;
 }
 
 export const TIME_IN_MS = {
@@ -26,6 +35,53 @@ export const getTimeRangeInMs = (range: TimeRange): number => {
   return TIME_IN_MS[range.toUpperCase() as keyof typeof TIME_IN_MS] || TIME_IN_MS.HOUR;
 };
 
+// Helper function to safely convert timestamp to Date
+export const safeParseDate = (timestamp: string | undefined): Date => {
+  if (!timestamp) {
+    return new Date();
+  }
+  const date = new Date(timestamp);
+  return isNaN(date.getTime()) ? new Date() : date;
+};
+
+// Helper function to safely get timestamp from ChartItem
+export const getItemTimestamp = (item: ChartItem): Date => {
+  if (item.timestamp) {
+    return safeParseDate(item.timestamp);
+  }
+  if (item.time) {
+    // Handle time-based items (e.g., "12:00", "Po", "15")
+    const now = new Date();
+    const timeStr = item.time;
+    
+    // Try to parse hour:minute format
+    const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})$/);
+    if (timeMatch) {
+      now.setHours(parseInt(timeMatch[1], 10), parseInt(timeMatch[2], 10), 0, 0);
+      return now;
+    }
+    
+    // Try to parse day number (1-31)
+    const dayMatch = timeStr.match(/^(\d{1,2})$/);
+    if (dayMatch) {
+      now.setDate(parseInt(dayMatch[1], 10));
+      return now;
+    }
+    
+    // Handle weekday abbreviations
+    const weekdays = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
+    const weekdayIndex = weekdays.indexOf(timeStr);
+    if (weekdayIndex !== -1) {
+      const currentDay = now.getDay();
+      const targetDay = weekdayIndex + 1; // Convert to 1-7 format
+      const diff = targetDay - (currentDay === 0 ? 7 : currentDay);
+      now.setDate(now.getDate() + diff);
+      return now;
+    }
+  }
+  return new Date();
+};
+
 export const getChartColors = (theme: Theme) => {
   return {
     primary: theme.palette.primary.main,
@@ -37,7 +93,8 @@ export const getChartColors = (theme: Theme) => {
   };
 };
 
-export const formatDateByTimeRange = (timestamp: string, timeRange: TimeRange, locale = 'cs-CZ'): string => {
+export const formatDateByTimeRange = (timestamp: string | undefined, timeRange: TimeRange, locale = 'cs-CZ'): string => {
+  if (!timestamp) return '';
   const date = new Date(timestamp);
   const options: Intl.DateTimeFormatOptions = {};
 
@@ -62,7 +119,8 @@ export const formatDateByTimeRange = (timestamp: string, timeRange: TimeRange, l
   return date.toLocaleString(locale, options);
 };
 
-export const formatDateByRange = (timestamp: string, timeRange: TimeRange, locale = 'cs-CZ'): string => {
+export const formatDateByRange = (timestamp: string | undefined, timeRange: TimeRange, locale = 'cs-CZ'): string => {
+  if (!timestamp) return '';
   const date = new Date(timestamp);
   const options: Intl.DateTimeFormatOptions = {};
 
@@ -88,7 +146,8 @@ export const formatDateByRange = (timestamp: string, timeRange: TimeRange, local
 };
 
 // Plné formátování data
-export const formatFullDate = (timestamp: string, locale = 'cs-CZ'): string => {
+export const formatFullDate = (timestamp: string | undefined, locale = 'cs-CZ'): string => {
+  if (!timestamp) return '';
   const date = new Date(timestamp);
   const day = date.getDate().toString().padStart(2, '0');
   const month = (date.getMonth() + 1).toString().padStart(2, '0');

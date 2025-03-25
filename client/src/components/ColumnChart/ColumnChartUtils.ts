@@ -1,12 +1,17 @@
 // components/ColumnChart/ColumnChartUtils.ts
-import { ChartItem, TimeRange } from '../common/ChartUtils';
+import { ChartItem, TimeRange, getItemTimestamp } from '../common/ChartUtils';
+import { DeviceMetrics } from '../../models/Metrics';
 
 export interface ChartDataItem {
   time: string;
   total: number;
+  deviceId: string;
+  timestamp: string;
 }
 
-export const groupDataByTimeRange = (data: ChartItem[], range: TimeRange): ChartDataItem[] => {
+export const groupDataByTimeRange = (data: DeviceMetrics[], range: TimeRange): ChartDataItem[] => {
+  if (data.length === 0) return [];
+  const deviceId = data[0].deviceId; // Use the deviceId from the first data point
   const groupedData: ChartDataItem[] = [];
   const currentDate = new Date();
 
@@ -17,7 +22,11 @@ export const groupDataByTimeRange = (data: ChartItem[], range: TimeRange): Chart
         const endTime = new Date(currentDate).setHours(i + 1, 0, 0, 0);
         
         const total = calculateTotalInRange(data, startTime, endTime);
+        const timestamp = new Date(currentDate);
+        timestamp.setHours(i, 0, 0, 0);
         groupedData.push({
+          deviceId,
+          timestamp: timestamp.toISOString(),
           time: `${i}:00`,
           total,
         });
@@ -35,7 +44,10 @@ export const groupDataByTimeRange = (data: ChartItem[], range: TimeRange): Chart
         const endTime = new Date(currentDate).setDate(currentDate.getDate() - firstDayOfWeek + i + 1);
         
         const total = calculateTotalInRange(data, startTime, endTime);
+        const timestamp = new Date(startTime);
         groupedData.push({
+          deviceId,
+          timestamp: timestamp.toISOString(),
           time: daysOfWeek[dayIndex],
           total,
         });
@@ -54,7 +66,10 @@ export const groupDataByTimeRange = (data: ChartItem[], range: TimeRange): Chart
         const endTime = new Date(currentDate.getFullYear(), currentDate.getMonth(), i + 1, 0, 0, 0).getTime();
         
         const total = calculateTotalInRange(data, startTime, endTime);
+        const timestamp = new Date(startTime);
         groupedData.push({
+          deviceId,
+          timestamp: timestamp.toISOString(),
           time: `${i}`,
           total,
         });
@@ -65,11 +80,11 @@ export const groupDataByTimeRange = (data: ChartItem[], range: TimeRange): Chart
   return groupedData;
 };
 
-const calculateTotalInRange = (data: ChartItem[], startTime: number, endTime: number): number => {
+const calculateTotalInRange = (data: DeviceMetrics[], startTime: number, endTime: number): number => {
   return data
     .filter(entry => {
-      const entryTime = new Date(entry.timestamp).getTime();
+      const entryTime = getItemTimestamp(entry).getTime();
       return entryTime >= startTime && entryTime < endTime;
     })
-    .reduce((acc, entry) => acc + entry.total, 0);
+    .reduce((acc, entry) => acc + (entry.total || 0), 0);
 };

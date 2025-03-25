@@ -38,6 +38,7 @@ export type DashboardItemType =
   | 'current-value-humidity'
   | 'current-value-battery'
   | 'real-time-graph'
+  | 'temperature-humidity-graph'
   | 'column-chart'
   | 'line-chart'
   | 'pie-chart'

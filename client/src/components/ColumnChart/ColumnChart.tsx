@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Box, Paper, Typography, useTheme } from '@mui/material';
 import { 
   ResponsiveContainer,
@@ -18,33 +18,63 @@ import { useColumnChartData } from './useColumnChartData';
 import CustomTooltip from './CustomTooltip';
 
 interface ColumnChartProps {
-  data: any[];
+  deviceId: string;
 }
 
-const ColumnChart: React.FC<ColumnChartProps> = ({ data }) => {
+const ColumnChart: React.FC<ColumnChartProps> = ({ deviceId }) => {
   const theme = useTheme();
-  const colors = getChartColors(theme);
+  const colors = useMemo(() => getChartColors(theme), [theme]);
   const [timeRange, setTimeRange] = useState<TimeRange>(TimeRange.DAY);
   
   const { 
     groupedData, 
     averageConsumption, 
-    chartProperties 
-  } = useColumnChartData(data, timeRange);
+    chartProperties,
+    loading,
+    error 
+  } = useColumnChartData(deviceId, timeRange);
+
+  // Memoize styles
+  const paperStyles = useMemo(() => ({
+    p: 2,
+    borderRadius: 2,
+    bgcolor: theme.palette.mode === 'dark' 
+      ? 'rgba(255, 255, 255, 0.05)' 
+      : 'rgba(0, 0, 0, 0.02)',
+    width: '100%',
+    height: '100%'
+  }), [theme.palette.mode]);
+
+  const loadingStyles = useMemo(() => ({
+    ...paperStyles,
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center'
+  }), [paperStyles]);
+
+  const chartContainerStyles = useMemo(() => ({
+    width: '100%',
+    height: 400
+  }), []);
+
+  if (loading) {
+    return (
+      <Paper elevation={1} sx={loadingStyles}>
+        <Typography>Načítání dat...</Typography>
+      </Paper>
+    );
+  }
+
+  if (error) {
+    return (
+      <Paper elevation={1} sx={loadingStyles}>
+        <Typography color="error">Chyba při načítání dat: {error}</Typography>
+      </Paper>
+    );
+  }
 
   return (
-    <Paper
-      elevation={1}
-      sx={{
-        p: 2,
-        borderRadius: 2,
-        bgcolor: theme.palette.mode === 'dark' 
-          ? 'rgba(255, 255, 255, 0.05)' 
-          : 'rgba(0, 0, 0, 0.02)',
-        width: '100%',
-        height: '100%'
-      }}
-    >
+    <Paper elevation={1} sx={paperStyles}>
       <Typography 
         variant="h6" 
         align="center" 
@@ -64,7 +94,7 @@ const ColumnChart: React.FC<ColumnChartProps> = ({ data }) => {
         showMax={false}
       />
       
-      <Box sx={{ width: '100%', height: 400 }}>
+      <Box sx={chartContainerStyles}>
         <ResponsiveContainer>
           <BarChart
             data={groupedData}

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        button {
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #1565c0;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+    </style>
+</head>
+<body>
+    <h1>Reset Dashboard Layout</h1>
+    <p>This page will reset your dashboard layout to the default settings. This is useful if you're experiencing issues with the dashboard or if you want to start fresh.</p>
+    <p><strong>Warning:</strong> This action cannot be undone. All your custom dashboard settings will be lost.</p>
+    
+    <button id="resetButton">Reset Dashboard Layout</button>
+    
+    <div id="result" class="result" style="display: none;"></div>
+    
+    <script>
+        document.getElementById('resetButton').addEventListener('click', function() {
+            try {
+                // Remove the dashboard layout from localStorage
+                localStorage.removeItem('dashboardLayout');
+                
+                // Show success message
+                const resultElement = document.getElementById('result');
+                resultElement.textContent = 'Dashboard layout has been reset successfully. Please refresh the main application page.';
+                resultElement.className = 'result success';
+                resultElement.style.display = 'block';
+            } catch (error) {
+                // Show error message
+                const resultElement = document.getElementById('result');
+                resultElement.textContent = 'An error occurred: ' + error.message;
+                resultElement.className = 'result error';
+                resultElement.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

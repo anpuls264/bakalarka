@@ -1,7 +1,8 @@
 // src/components/HeatMap/useHeatMapData.ts
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useTheme } from '@mui/material';
-import { ChartItem, TimeRange, getTimeRangeInMs } from '../common/ChartUtils';
+import { ChartItem, TimeRange, getTimeRangeInMs, getItemTimestamp } from '../common/ChartUtils';
+import { deviceService } from '../../services/DeviceService';
 
 export interface HeatMapCell {
   day: number;
@@ -24,26 +25,49 @@ export enum ConsumptionLevel {
   VERY_HIGH = 'veryHigh'
 }
 
-export const useHeatMapData = (data: ChartItem[], timeRange: TimeRange) => {
+export const useHeatMapData = (deviceId: string, timeRange: TimeRange) => {
   const theme = useTheme();
   const [hoveredCell, setHoveredCell] = useState<HeatMapCell | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<ChartItem[]>([]);
 
   // Konstanty pro popisky
   const dayLabels = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
   const hourLabels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
 
+  // Fetch data from server
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const currentTime = new Date();
+        const timeRangeMs = getTimeRangeInMs(timeRange);
+        const startTime = new Date(currentTime.getTime() - timeRangeMs);
+
+        const fetchedData = await deviceService.getDeviceMetrics(deviceId, {
+          startDate: startTime,
+          endDate: currentTime,
+          interval: Math.ceil(timeRangeMs / 100) // Interval pro agregaci na serveru
+        });
+
+        setData(fetchedData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch data');
+        console.error('Error fetching heat map data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [deviceId, timeRange]);
+
   // Zpracování dat pro heatmapu
   const heatMapData = useMemo(() => {
     if (data.length === 0) return [];
-
-    const currentTime = new Date().getTime();
-    const timeRangeMs = getTimeRangeInMs(timeRange);
-    const startTime = currentTime - timeRangeMs;
-    
-    const filteredData = data.filter(item => {
-      const itemTime = new Date(item.timestamp).getTime();
-      return itemTime >= startTime && itemTime <= currentTime;
-    });
 
     // Vytvoření 2D mřížky pro dny a hodiny
     const grid: HeatMapCell[][] = Array.from({ length: 7 }, (_, day) => 
@@ -58,8 +82,8 @@ export const useHeatMapData = (data: ChartItem[], timeRange: TimeRange) => {
     );
 
     // Agregace dat podle dne a hodiny
-    filteredData.forEach(item => {
-      const date = new Date(item.timestamp);
+    data.forEach(item => {
+      const date = getItemTimestamp(item);
       const day = date.getDay();
       const hour = date.getHours();
       
@@ -80,7 +104,7 @@ export const useHeatMapData = (data: ChartItem[], timeRange: TimeRange) => {
     }
 
     return grid;
-  }, [data, timeRange]);
+  }, [data]);
 
   // Nalezení maximální hodnoty výkonu pro škálování barev
   const maxPower = useMemo(() => {
@@ -180,6 +204,8 @@ export const useHeatMapData = (data: ChartItem[], timeRange: TimeRange) => {
     getCellColor,
     hoveredCell,
     setHoveredCell,
-    consumptionColors
+    consumptionColors,
+    loading,
+    error
   };
 };

@@ -7,6 +7,7 @@ export type DashboardItemType =
   | 'current-value-humidity'
   | 'current-value-battery'
   | 'real-time-graph'
+  | 'temperature-humidity-graph'
   | 'column-chart'
   | 'line-chart'
   | 'pie-chart'
@@ -91,6 +92,14 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
       title: 'Battery',
       width: 4,
       order: 3,
+      visible: true
+    },
+    {
+      id: 'temperature-humidity-graph',
+      type: 'temperature-humidity-graph',
+      title: 'Temperature & Humidity Graph',
+      width: 2,
+      order: 4,
       visible: true
     },
     {

@@ -27,6 +27,41 @@ export class MqttService {
       }, 1000);
     });
 
+    // Listen for device added events to subscribe to new device topics
+    this.deviceManager.on('deviceAdded', (device) => {
+      if (this.isConnected) {
+        console.log(device.getMqttTopic());
+        const baseTopic = `${device.getMqttTopic()}/status/#`;
+        this.client.subscribe(baseTopic, (err: Error | null) => {
+          if (err) {
+            console.error(`Error subscribing to ${baseTopic}:`, err);
+          } else {
+            console.log(`Subscribed to ${baseTopic} for newly added device`);
+          }
+        });
+      }
+    });
+    
+    // Listen for device removed events to unsubscribe from topics
+    this.deviceManager.on('deviceRemoved', (deviceId: string) => {
+      if (this.isConnected) {
+        // Find the device in the list before it was removed to get its topic
+        const devices = this.deviceManager.getAllDevices();
+        const device = devices.find(d => d.getId() === deviceId);
+        
+        if (device) {
+          const baseTopic = `${device.getMqttTopic()}/status/#`;
+          this.client.unsubscribe(baseTopic, (err) => {
+            if (err) {
+              console.error(`Error unsubscribing from ${baseTopic}:`, err);
+            } else {
+              console.log(`Unsubscribed from ${baseTopic} for removed device`);
+            }
+          });
+        }
+      }
+    });
+
     this.client.on('message', (topic: string, message: Buffer) => {
       console.log(`Received message on topic ${topic}`);
       this.deviceManager.handleMqttMessage(topic, message);
@@ -156,6 +191,16 @@ export class MqttService {
         }
       });
     });
+  }
+
+  // Re-subscribe to all device topics
+  resubscribeToAllTopics(): void {
+    if (this.isConnected) {
+      console.log('Re-subscribing to all device topics');
+      this.subscribeToTopics();
+    } else {
+      console.warn('Cannot re-subscribe: MQTT client not connected');
+    }
   }
 
   // Close the MQTT connection

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import DeviceList from './components/DeviceList';
 import { deviceService } from './services/DeviceService';
 import { metricsService } from './services/MetricsService';
 import { dashboardService } from './services/DashboardService';
 import { metricsToItems } from './utils/dataAdapters';
+import { isComponentCompatible } from './utils/componentCompatibility';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { 
   IconButton, 
@@ -14,6 +15,7 @@ import {
 } from '@mui/material';
 import { lightTheme, darkTheme } from './theme';
 import RealTimeGraph from './components/RealTimeGraph/RealTimeGraph';
+import TemperatureHumidityGraph from './components/TemperatureHumidityGraph/TemperatureHumidityGraph';
 import CurrentValues from './components/CurrentValue/CurrentValue';
 import Tabs from './components/Tabs';
 import DashboardLayout from './components/DashboardLayout';
@@ -80,40 +82,42 @@ const App: React.FC = () => {
   const myNumberString: string | null = localStorage.getItem("myNumber");
   const myNumber: number = myNumberString !== null ? parseFloat(myNumberString) : 1;
 
-  // Handle interval change
-  const handleUpdateInterval = (newInterval: number) => {
+  // Memoized handlers
+  const handleUpdateInterval = useCallback((newInterval: number) => {
     setIntervalInMilliseconds(newInterval);
-  };
+  }, []);
 
-  // Toggle modal
-  const handleToggleModal = () => {
-    setShowModal(!showModal);
-  };
+  const handleToggleModal = useCallback(() => {
+    setShowModal(prev => !prev);
+  }, []);
 
-  // Toggle dark mode
-  const toggleDarkMode = () => {
-    setDarkMode((prevMode) => !prevMode);
-  };
+  const toggleDarkMode = useCallback(() => {
+    setDarkMode(prev => !prev);
+  }, []);
 
-  // Handle device selection
-  const handleDeviceSelect = async (deviceId: string) => {
+  const handleDeviceSelect = useCallback(async (deviceId: string) => {
     setSelectedDeviceId(deviceId);
     
-    // Fetch the selected device
     const device = await deviceService.getDevice(deviceId);
     setSelectedDevice(device);
     
-    // Update device state
     if (device) {
       setDeviceState(device.state);
     }
-  };
+  }, []);
 
-  // Subscribe to device state updates
+  // Combine all subscriptions into one effect
   useEffect(() => {
-    const unsubscribe = deviceService.subscribeToDeviceState((state) => {
-      setDeviceState(state);
-    });
+    const subscriptions = [
+      deviceService.subscribeToDeviceState(setDeviceState),
+      metricsService.subscribeToMetrics(setMetrics),
+      metricsService.subscribeToTotal('hour', setHourlyTotal),
+      metricsService.subscribeToTotal('day', setDailyTotal),
+      metricsService.subscribeToTotal('week', setWeeklyTotal),
+      metricsService.subscribeToTotal('month', setMonthlyTotal),
+      dashboardService.subscribeToLayout(setDashboardLayout),
+      dashboardService.subscribeToEditMode(setEditMode)
+    ];
     
     // Fetch initial selected device
     const fetchSelectedDevice = async () => {
@@ -127,64 +131,18 @@ const App: React.FC = () => {
     fetchSelectedDevice();
     
     return () => {
-      unsubscribe();
+      subscriptions.forEach(unsubscribe => unsubscribe());
     };
   }, [selectedDeviceId]);
 
-  // Subscribe to metrics updates
-  useEffect(() => {
-    const unsubscribeMetrics = metricsService.subscribeToMetrics((newMetrics) => {
-      setMetrics(newMetrics);
-    });
-    
-    const unsubscribeHourly = metricsService.subscribeToTotal('hour', (total) => {
-      setHourlyTotal(total);
-    });
-    
-    const unsubscribeDaily = metricsService.subscribeToTotal('day', (total) => {
-      setDailyTotal(total);
-    });
-    
-    const unsubscribeWeekly = metricsService.subscribeToTotal('week', (total) => {
-      setWeeklyTotal(total);
-    });
-    
-    const unsubscribeMonthly = metricsService.subscribeToTotal('month', (total) => {
-      setMonthlyTotal(total);
-    });
-    
-    return () => {
-      unsubscribeMetrics();
-      unsubscribeHourly();
-      unsubscribeDaily();
-      unsubscribeWeekly();
-      unsubscribeMonthly();
-    };
-  }, []);
+  // Memoized calculations
+  const aggregatedMetrics = useMemo(() => {
+    return metrics.length > 0 
+      ? metricsService.getAggregatedMetrics(intervalInMilliseconds)
+      : [];
+  }, [metrics, intervalInMilliseconds]);
 
-  // Subscribe to dashboard layout updates
-  useEffect(() => {
-    const unsubscribeLayout = dashboardService.subscribeToLayout((layout) => {
-      setDashboardLayout(layout);
-    });
-    
-    const unsubscribeEditMode = dashboardService.subscribeToEditMode((mode) => {
-      setEditMode(mode);
-    });
-    
-    return () => {
-      unsubscribeLayout();
-      unsubscribeEditMode();
-    };
-  }, []);
-
-  // Get aggregated metrics based on the interval
-  const aggregatedMetrics = metrics.length > 0 
-    ? metricsService.getAggregatedMetrics(intervalInMilliseconds)
-    : [];
-
-  // Calculate min and max values for metrics
-  const getMinMaxValues = (property: keyof DeviceMetrics) => {
+  const getMinMaxValues = useCallback((property: keyof DeviceMetrics) => {
     if (!metrics.length) return { min: 0, max: 0 };
     
     const validValues = metrics
@@ -195,30 +153,48 @@ const App: React.FC = () => {
       min: validValues.length ? Math.min(...validValues) : 0,
       max: validValues.length ? Math.max(...validValues) : 0
     };
-  };
+  }, [metrics]);
 
-  // Get latest metric values
-  const getLatestValue = (property: keyof DeviceMetrics) => {
+  const getLatestValue = useCallback((property: keyof DeviceMetrics) => {
     if (!metrics.length) return 0;
     return metrics[metrics.length - 1][property] as number || 0;
-  };
+  }, [metrics]);
+
+  // Memoize transformed data for charts
+  const chartData = useMemo(() => 
+    metricsToItems(aggregatedMetrics), 
+    [aggregatedMetrics]
+  );
+
+  // Memoize header props
+  const headerProps = useMemo(() => ({
+    darkMode,
+    toggleDarkMode,
+    deviceState,
+    metricsCount: metrics.length,
+    showDeviceList,
+    setShowDeviceList,
+    editMode,
+    handleUpdateInterval,
+    handleToggleModal,
+    onDeviceSelect: handleDeviceSelect
+  }), [
+    darkMode, 
+    toggleDarkMode, 
+    deviceState, 
+    metrics.length, 
+    showDeviceList, 
+    editMode, 
+    handleUpdateInterval, 
+    handleToggleModal, 
+    handleDeviceSelect
+  ]);
 
   return (
     <ThemeProvider theme={darkMode ? darkTheme : lightTheme}>
       <CssBaseline />
       <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh', p: 2 }}>
-        <Header 
-          darkMode={darkMode}
-          toggleDarkMode={toggleDarkMode}
-          deviceState={deviceState}
-          metricsCount={metrics.length}
-          showDeviceList={showDeviceList}
-          setShowDeviceList={setShowDeviceList}
-          editMode={editMode}
-          handleUpdateInterval={handleUpdateInterval}
-          handleToggleModal={handleToggleModal}
-          onDeviceSelect={handleDeviceSelect}
-        />
+        <Header {...headerProps} />
 
         {showDeviceList ? (
           <Container maxWidth="lg" sx={{ mt: 3 }}>
@@ -236,12 +212,16 @@ const App: React.FC = () => {
               >
                 {/* Control Panel */}
                 <div data-id="control-panel">
-                  <ControlPanel deviceId={selectedDeviceId} />
+                  {selectedDevice && isComponentCompatible('control-panel', selectedDevice.type) ? (
+                    <ControlPanel deviceId={selectedDeviceId} />
+                  ) : (
+                    null
+                  )}
                 </div>
                 
                 {/* Current Values for ShellyPlugS */}
                 <div data-id="current-value-voltage">
-                  {selectedDevice?.type === 'shelly-plug-s' ? (
+                  {selectedDevice && isComponentCompatible('current-value-voltage', selectedDevice.type) ? (
                     <CurrentValues 
                       unit={UnitType.VOLT} 
                       value={getLatestValue('voltage')} 
@@ -249,25 +229,25 @@ const App: React.FC = () => {
                       max={getMinMaxValues('voltage').max} 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
                 
                 <div data-id="current-value-power">
-                  {selectedDevice?.type === 'shelly-plug-s' ? (
+                  {selectedDevice && isComponentCompatible('current-value-power', selectedDevice.type) ? (
                     <CurrentValues 
-                    unit={UnitType.WATT} 
+                      unit={UnitType.WATT} 
                       value={getLatestValue('apower')} 
                       min={getMinMaxValues('apower').min} 
                       max={getMinMaxValues('apower').max} 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
                 
                 <div data-id="current-value-current">
-                  {selectedDevice?.type === 'shelly-plug-s' ? (
+                  {selectedDevice && isComponentCompatible('current-value-current', selectedDevice.type) ? (
                     <CurrentValues 
                       unit={UnitType.AMPERE} 
                       value={getLatestValue('current')} 
@@ -275,13 +255,13 @@ const App: React.FC = () => {
                       max={getMinMaxValues('current').max} 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
                 
                 {/* Current Values for ShellyHT */}
                 <div data-id="current-value-temperature">
-                  {selectedDevice?.type === 'shelly-ht' ? (
+                  {selectedDevice && isComponentCompatible('current-value-temperature', selectedDevice.type) ? (
                     <CurrentValues 
                       unit={UnitType.CELSIUS} 
                       value={getLatestValue('temperature')} 
@@ -289,12 +269,12 @@ const App: React.FC = () => {
                       max={getMinMaxValues('temperature').max} 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
                 
                 <div data-id="current-value-humidity">
-                  {selectedDevice?.type === 'shelly-ht' ? (
+                  {selectedDevice && isComponentCompatible('current-value-humidity', selectedDevice.type) ? (
                     <CurrentValues 
                       unit={UnitType.PERCENT} 
                       value={getLatestValue('humidity')} 
@@ -302,12 +282,12 @@ const App: React.FC = () => {
                       max={getMinMaxValues('humidity').max} 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
                 
                 <div data-id="current-value-battery">
-                  {selectedDevice?.type === 'shelly-ht' ? (
+                  {selectedDevice && isComponentCompatible('current-value-battery', selectedDevice.type) ? (
                     <CurrentValues 
                       unit={UnitType.PERCENT} 
                       value={deviceState?.battery || 0} 
@@ -315,84 +295,103 @@ const App: React.FC = () => {
                       max={100} 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
                 
-                {/* Charts - Show for all device types but adapt data */}
+                {/* Temperature Humidity Graph - Only for ShellyHT */}
+                <div data-id="temperature-humidity-graph">
+                  {selectedDevice && isComponentCompatible('temperature-humidity-graph', selectedDevice.type) ? (
+                    <TemperatureHumidityGraph deviceId={selectedDeviceId} />
+                  ) : (
+                    null
+                  )}
+                </div>
+                
+                {/* Charts */}
                 <div data-id="real-time-graph">
-                  <RealTimeGraph 
-                    data={metricsToItems(aggregatedMetrics)} 
-                  />
+                  {selectedDevice && isComponentCompatible('real-time-graph', selectedDevice.type) ? (
+                    <RealTimeGraph deviceId={selectedDeviceId} />
+                  ) : (
+                    null
+                  )}
                 </div>
                 
                 <div data-id="column-chart">
-                  <ColumnChart 
-                    data={metricsToItems(aggregatedMetrics)} 
-                  />
+                  {selectedDevice && isComponentCompatible('column-chart', selectedDevice.type) ? (
+                    <ColumnChart deviceId={selectedDeviceId} />
+                  ) : (
+                    null
+                  )}
                 </div>
                 
                 <div data-id="line-chart">
-                  <LineChart 
-                    data={metricsToItems(aggregatedMetrics)} 
-                  />
+                  {selectedDevice && isComponentCompatible('line-chart', selectedDevice.type) ? (
+                    <LineChart deviceId={selectedDeviceId} />
+                  ) : (
+                    null
+                  )}
                 </div>
                 
                 <div data-id="pie-chart">
-                  <PieChart 
-                    data={metricsToItems(aggregatedMetrics)} 
-                  />
+                  {selectedDevice && isComponentCompatible('pie-chart', selectedDevice.type) ? (
+                    <PieChart deviceId={selectedDeviceId} />
+                  ) : (
+                    null
+                  )}
                 </div>
                 
-                {/* Heat Map */}
+                 {/* Heat Map */}
                 <div data-id="heat-map">
-                  <HeatMap 
-                    data={metricsToItems(aggregatedMetrics)} 
-                  />
+                  {selectedDevice && isComponentCompatible('heat-map', selectedDevice.type) ? (
+                    <HeatMap deviceId={selectedDeviceId} />
+                  ) : (
+                    null
+                  )}
                 </div>
                 
-                {/* Expense Boxes - Only show content for ShellyPlugS */}
+                {/* Expense Boxes */}
                 <div data-id="expense-box-hour">
-                  {selectedDevice?.type === 'shelly-plug-s' ? (
+                  {selectedDevice && isComponentCompatible('expense-box-hour', selectedDevice.type) ? (
                     <ExpenseBox 
                       amount={hourlyTotal * myNumber} 
                       den='hodinu' 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
                 
                 <div data-id="expense-box-day">
-                  {selectedDevice?.type === 'shelly-plug-s' ? (
+                  {selectedDevice && isComponentCompatible('expense-box-day', selectedDevice.type) ? (
                     <ExpenseBox 
                       amount={dailyTotal * myNumber} 
                       den='den' 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
                 
                 <div data-id="expense-box-week">
-                  {selectedDevice?.type === 'shelly-plug-s' ? (
+                  {selectedDevice && isComponentCompatible('expense-box-week', selectedDevice.type) ? (
                     <ExpenseBox 
                       amount={weeklyTotal * myNumber} 
                       den='týden' 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
                 
                 <div data-id="expense-box-month">
-                  {selectedDevice?.type === 'shelly-plug-s' ? (
+                  {selectedDevice && isComponentCompatible('expense-box-month', selectedDevice.type) ? (
                     <ExpenseBox 
                       amount={monthlyTotal * myNumber} 
                       den='měsíc' 
                     />
                   ) : (
-                    <Box sx={{ display: 'none' }}></Box>
+                    null
                   )}
                 </div>
               </DashboardLayout>

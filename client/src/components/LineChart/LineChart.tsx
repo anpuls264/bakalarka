@@ -1,5 +1,5 @@
 // components/LineChart/LineChart.tsx
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Box, Paper, Typography, useTheme } from '@mui/material';
 import { 
   ResponsiveContainer,
@@ -15,38 +15,58 @@ import {
 import { TimeRange, formatDateByTimeRange, getChartColors } from '../common/ChartUtils';
 import TimeRangeSelector from '../common/TimeRangeSelector';
 import { useChartData } from './useChartData';
-import ChartSkeleton from '../common/ChartSkeleton';
-import { useChartLoading } from '../common/useChartLoading';
 
 interface LineChartProps {
-  data: any[];
+  deviceId: string;
 }
 
-const LineChart: React.FC<LineChartProps> = ({ data }) => {
+const LineChart: React.FC<LineChartProps> = ({ deviceId }) => {
   const theme = useTheme();
-  const colors = getChartColors(theme);
+  const colors = useMemo(() => getChartColors(theme), [theme]);
   const [timeRange, setTimeRange] = useState<TimeRange>(TimeRange.DAY);
-  const { processedData, averagePower } = useChartData(data, timeRange);
-  const loading = useChartLoading(data);
-  
-  // Zobrazí skeleton během načítání
+  const { processedData, averagePower, loading, error } = useChartData(deviceId, timeRange);
+
+  // Memoize styles
+  const paperStyles = useMemo(() => ({
+    p: 2,
+    borderRadius: 2,
+    bgcolor: theme.palette.mode === 'dark' 
+      ? 'rgba(255, 255, 255, 0.05)' 
+      : 'rgba(0, 0, 0, 0.02)',
+    width: '100%',
+    height: '100%'
+  }), [theme.palette.mode]);
+
+  const loadingStyles = useMemo(() => ({
+    ...paperStyles,
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center'
+  }), [paperStyles]);
+
+  const chartContainerStyles = useMemo(() => ({
+    width: '100%',
+    height: 400
+  }), []);
+
   if (loading) {
-    return <ChartSkeleton />;
+    return (
+      <Paper elevation={1} sx={loadingStyles}>
+        <Typography>Načítání dat...</Typography>
+      </Paper>
+    );
+  }
+
+  if (error) {
+    return (
+      <Paper elevation={1} sx={loadingStyles}>
+        <Typography color="error">Chyba při načítání dat: {error}</Typography>
+      </Paper>
+    );
   }
 
   return (
-    <Paper
-      elevation={1}
-      sx={{
-        p: 2,
-        borderRadius: 2,
-        bgcolor: theme.palette.mode === 'dark' 
-          ? 'rgba(255, 255, 255, 0.05)' 
-          : 'rgba(0, 0, 0, 0.02)',
-        width: '100%',
-        height: '100%'
-      }}
-    >
+    <Paper elevation={1} sx={paperStyles}>
       <Typography 
         variant="h6" 
         align="center" 
@@ -62,7 +82,7 @@ const LineChart: React.FC<LineChartProps> = ({ data }) => {
         showMax={true}
       />
       
-      <Box sx={{ width: '100%', height: 400 }}>
+      <Box sx={chartContainerStyles}>
         <ResponsiveContainer>
           <RechartsLineChart
             data={processedData}

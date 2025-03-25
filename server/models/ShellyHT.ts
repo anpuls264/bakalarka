@@ -24,13 +24,13 @@ export class ShellyHT extends Device {
       const messageStr = message.toString();
       const data = JSON.parse(messageStr);
       
-      if (topic === `${this.config.mqttTopic}/status/temperature`) {
+      if (topic === `${this.config.mqttTopic}/status/temperature:0`) {
         // Zpracování dat o teplotě
         this.handleTemperatureData(data);
-      } else if (topic === `${this.config.mqttTopic}/status/humidity`) {
+      } else if (topic === `${this.config.mqttTopic}/status/humidity:0`) {
         // Zpracování dat o vlhkosti
         this.handleHumidityData(data);
-      } else if (topic === `${this.config.mqttTopic}/status/battery`) {
+      } else if (topic === `${this.config.mqttTopic}/status/devicepower:0`) {
         // Zpracování dat o baterii
         this.handleBatteryData(data);
       } else if (topic === 'user_1/rpc') {
@@ -78,13 +78,13 @@ export class ShellyHT extends Device {
 
   // Zpracování dat o baterii
   private handleBatteryData(data: any): void {
-    if (data.value === undefined) {
+    if (data.battery?.percent === undefined) {
       return;
     }
     
     // Aktualizace stavu
     this.updateState({
-      battery: data.value
+      battery: data.battery.percent
     });
   }
 

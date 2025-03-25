@@ -14,21 +14,45 @@ import CustomPieTooltip from './CustomTooltip';
 import { usePieChartData } from './usePieChartData';
 
 interface PieChartProps {
-  data: any[];
+  deviceId: string;
 }
 
-// No longer need the debug wrapper
-
-const PieChart: React.FC<PieChartProps> = ({ data }) => {
+const PieChart: React.FC<PieChartProps> = ({ deviceId }) => {
   const theme = useTheme();
   const [timeRange, setTimeRange] = useState<TimeRange>(TimeRange.DAY);
-  
-  // Použití custom hooku pro zpracování dat
-  const { distributionData, formatValue } = usePieChartData(data, timeRange);
-  
-  // Use the distribution data for the pie chart
 
-  // Získat název pro časový rozsah
+  // Custom hook for data processing
+  const { distributionData, formatValue, loading, error } = usePieChartData(deviceId, timeRange);
+
+  // Styles for the paper container
+  const paperStyles = {
+    p: 2.5,
+    borderRadius: 2,
+    bgcolor: theme.palette.mode === 'dark' 
+      ? 'rgba(255, 255, 255, 0.05)' 
+      : 'rgba(0, 0, 0, 0.02)',
+    width: '100%',
+    height: '100%',
+    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+  };
+
+  if (error) {
+    return (
+      <Paper
+        elevation={1}
+        sx={{
+          ...paperStyles,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}
+      >
+        <Typography color="error">Chyba při načítání dat: {error}</Typography>
+      </Paper>
+    );
+  }
+
+  // Get title for time range
   const getTimeRangeTitle = () => {
     switch (timeRange) {
       case TimeRange.DAY:
@@ -42,25 +66,13 @@ const PieChart: React.FC<PieChartProps> = ({ data }) => {
     }
   };
 
-  // Callback pro změnu časového rozsahu
+  // Callback for time range change
   const handleTimeRangeChange = (range: TimeRange) => {
     setTimeRange(range);
   };
 
   return (
-    <Paper
-      elevation={1}
-      sx={{
-        p: 2.5,
-        borderRadius: 2,
-        bgcolor: theme.palette.mode === 'dark' 
-          ? 'rgba(255, 255, 255, 0.05)' 
-          : 'rgba(0, 0, 0, 0.02)',
-        width: '100%',
-        height: '100%',
-        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
-      }}
-    >
+    <Paper elevation={1} sx={paperStyles}>
       <Typography 
         variant="h6" 
         align="center" 
@@ -69,18 +81,16 @@ const PieChart: React.FC<PieChartProps> = ({ data }) => {
         {`${getTimeRangeTitle()} distribuce spotřeby energie`}
       </Typography>
       
-      {/* Použití sdílené komponenty TimeRangeSelector */}
+      {/* Time range selector */}
       <Box sx={{ mb: 2 }}>
         <TimeRangeSelector 
           currentRange={timeRange} 
           onRangeChange={handleTimeRangeChange}
-          // Vlastní popisky tlačítek pro koláčový graf
           customLabels={{
             [TimeRange.DAY]: 'Den',
             [TimeRange.WEEK]: 'Týden',
             [TimeRange.MONTH]: 'Měsíc'
           }}
-          // Skrýt časové rozsahy, které nepoužíváme
           showHour={false}
           showMax={false}
         />

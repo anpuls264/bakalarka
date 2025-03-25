@@ -24,7 +24,8 @@ import {
   SelectChangeEvent
 } from '@mui/material';
 import { FiPower, FiThermometer, FiDroplet, FiZap, FiPlus, FiEdit, FiTrash2 } from 'react-icons/fi';
-import { Device, deviceService } from '../services/DeviceService';
+import { deviceService } from '../services/DeviceService';
+import { Device } from '../models/Device';
 
 interface DeviceListProps {
   onSelectDevice?: (device: Device) => void;
