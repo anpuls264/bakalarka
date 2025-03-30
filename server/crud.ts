@@ -1,126 +1,102 @@
 import { db } from './database';
+import { DeviceConfig } from './models/Device';
 
-// Rozhraní pro metriky zařízení
-export interface DeviceMetrics {
+interface ElectricalMetrics {
     id?: number;
     deviceId: string;
     timestamp: string;
-    apower?: number;
-    voltage?: number;
-    current?: number;
-    total?: number;
-    temperature?: number;
-    humidity?: number;
+    apower: number;
+    voltage: number;
+    current: number;
+    total: number;
 }
 
-// Rozhraní pro zařízení
-export interface DeviceData {
+interface EnvironmentalMetrics {
+    id?: number;
+    deviceId: string;
+    timestamp: string;
+    temperature: number;
+    humidity: number;
+}
+
+interface Device {
     id: string;
     name: string;
     type: string;
-    config: string;
+    mqttPrefix: string;
 }
 
-// CREATE - Uložení zařízení
-export const createDevice = (id: string, name: string, type: string, config: object): Promise<{ id: string }> => {
-    const sql = 'INSERT OR REPLACE INTO Devices (id, name, type, config) VALUES (?, ?, ?, ?)';
+// DEVICE CRUD OPERATIONS
+
+// Create a new device
+export const createDevice = (id: string, name: string, type: string, mqttPrefix: string): Promise<void> => {
+    const sql = 'INSERT INTO Devices (id, name, type, mqttPrefix) VALUES (?, ?, ?, ?)';
     
-    return new Promise<{ id: string }>((resolve, reject) => {
-        db.run(sql, [id, name, type, JSON.stringify(config)], function (err: Error | null) {
+    return new Promise<void>((resolve, reject) => {
+        db.run(sql, [id, name, type, mqttPrefix], function(err: Error | null) {
             if (err) {
                 reject(err);
             } else {
-                resolve({ id });
+                resolve();
             }
         });
     });
 };
 
-// READ - Načtení všech zařízení
-export const readDevices = (): Promise<DeviceData[]> => {
+// Read all devices
+export const readDevices = (): Promise<Device[]> => {
     const sql = 'SELECT * FROM Devices';
-    console.log("kek");
     
-    return new Promise<DeviceData[]>((resolve, reject) => {
+    return new Promise<Device[]>((resolve, reject) => {
         db.all(sql, [], (err: Error | null, rows: any[]) => {
             if (err) {
                 reject(err);
             } else {
-                try {
-                    // Převést config z JSON string na objekt, ale zachovat jako string v DeviceData
-                    const devices = rows.map(row => {
-                        try {
-                            console.log("kek");
-                            // Validate that config is a string before parsing
-                            if (typeof row.config !== 'string') {
-                                console.error(`Device ${row.id}: config is not a string, it's a ${typeof row.config}`);
-                                return row; // Return row as is
-                            }
-                            console.log(row.config);
-                            console.log("kek");
-                            // Try to parse the config to validate it's valid JSON, but keep it as a string
-                            JSON.parse(row.config); // Just to validate
-                            return row;
-                        } catch (parseError: any) {
-                            console.error(`Error parsing config for device ${row.id}: ${parseError.message}`);
-                            console.error('Invalid config:', row.config);
-                            return row; // Return row as is, let the caller handle the invalid JSON
-                        }
-                    });
-                    resolve(devices);
-                } catch (error) {
-                    console.error('Error processing devices:', error);
-                    reject(error);
-                }
+                const devices = rows.map(row => ({
+                    id: row.id,
+                    name: row.name,
+                    type: row.type,
+                    mqttPrefix: row.mqttPrefix
+                }));
+                resolve(devices);
             }
         });
     });
 };
 
-// READ - Načtení konkrétního zařízení podle ID
-export const readDeviceById = (id: string): Promise<DeviceData | null> => {
+// Read device by ID
+export const readDeviceById = (id: string): Promise<Device | null> => {
     const sql = 'SELECT * FROM Devices WHERE id = ?';
     
-    return new Promise<DeviceData | null>((resolve, reject) => {
+    return new Promise<Device | null>((resolve, reject) => {
         db.get(sql, [id], (err: Error | null, row: any) => {
             if (err) {
                 reject(err);
             } else if (!row) {
                 resolve(null);
             } else {
-                try {
-                    // Validate that config is a string before parsing
-                    if (typeof row.config !== 'string') {
-                        console.error(`Device ${row.id}: config is not a string, it's a ${typeof row.config}`);
-                        resolve(row); // Return row as is
-                    } else {
-                        // Try to parse the config to validate it's valid JSON, but keep it as a string
-                        try {
-                            JSON.parse(row.config); // Just to validate
-                            resolve(row);
-                        } catch (parseError: any) {
-                            console.error(`Error parsing config for device ${row.id}: ${parseError.message}`);
-                            console.error('Invalid config:', row.config);
-                            resolve(row); // Return row as is, let the caller handle the invalid JSON
-                        }
-                    }
-                } catch (error: any) {
-                    console.error(`Error processing device ${id}: ${error.message}`);
-                    reject(error);
-                }
+                const device: Device = {
+                    id: row.id,
+                    name: row.name,
+                    type: row.type,
+                    mqttPrefix: row.mqttPrefix
+                };
+                resolve(device);
             }
         });
     });
 };
 
-// UPDATE - Aktualizace zařízení
-export const updateDevice = (id: string, config: object): Promise<void> => {
-    const sql = 'UPDATE Devices SET config = ? WHERE id = ?';
+// Update device
+export const updateDevice = (id: string, name: string, type: string, mqttPrefix: string): Promise<void> => {
+    const sql = 'UPDATE Devices SET name = ?, type = ?, mqttPrefix = ? WHERE id = ?';
     
     return new Promise<void>((resolve, reject) => {
-        db.run(sql, [JSON.stringify(config), id], function (err: Error | null) {
+        db.run(sql, [name, type, mqttPrefix, id], function(err: Error | null) {
             if (err) {
                 reject(err);
+            } else if (this.changes === 0) {
+                reject(new Error('Device not found'));
             } else {
                 resolve();
             }
@@ -128,14 +104,16 @@ export const updateDevice = (id: string, config: object): Promise<void> => {
     });
 };
 
-// DELETE - Odstranění zařízení
+// Delete device
 export const deleteDevice = (id: string): Promise<void> => {
     const sql = 'DELETE FROM Devices WHERE id = ?';
     
     return new Promise<void>((resolve, reject) => {
-        db.run(sql, [id], function (err: Error | null) {
+        db.run(sql, [id], function(err: Error | null) {
             if (err) {
                 reject(err);
+            } else if (this.changes === 0) {
+                reject(new Error('Device not found'));
             } else {
                 resolve();
             }
@@ -143,130 +121,92 @@ export const deleteDevice = (id: string): Promise<void> => {
     });
 };
 
-// CREATE - Uložení metrik zařízení
-export const createMetrics = (metrics: DeviceMetrics): Promise<{ id: number }> => {
-    const { deviceId, timestamp, apower, voltage, current, total, temperature, humidity } = metrics;
-    const sql = 'INSERT INTO DeviceMetrics (deviceId, timestamp, apower, voltage, current, total, temperature, humidity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+// ELECTRICAL METRICS CRUD OPERATIONS
+
+// Create new electrical metrics
+export const createElectricalMetrics = (metrics: ElectricalMetrics): Promise<{ id: number }> => {
+    const sql = 'INSERT INTO ElectricalMetrics (deviceId, timestamp, apower, voltage, current, total) VALUES (?, ?, ?, ?, ?, ?)';
     
     return new Promise<{ id: number }>((resolve, reject) => {
-        db.run(sql, [deviceId, timestamp, apower, voltage, current, total, temperature, humidity], function (err: Error | null) {
+        db.run(
+            sql, 
+            [
+                metrics.deviceId, 
+                metrics.timestamp, 
+                metrics.apower, 
+                metrics.voltage, 
+                metrics.current, 
+                metrics.total
+            ], 
+            function(err: Error | null) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve({ id: this.lastID });
+                }
+            }
+        );
+    });
+};
+
+// Read all electrical metrics
+export const readElectricalMetrics = (): Promise<ElectricalMetrics[]> => {
+    const sql = 'SELECT * FROM ElectricalMetrics';
+    
+    return new Promise<ElectricalMetrics[]>((resolve, reject) => {
+        db.all(sql, [], (err: Error | null, rows: any[]) => {
             if (err) {
                 reject(err);
             } else {
-                resolve({ id: this.lastID });
+                resolve(rows);
             }
         });
     });
 };
 
-// READ - Načtení metrik pro konkrétní zařízení s filtrováním a agregací na úrovni databáze
-export const readMetricsByDeviceId = (
-    deviceId: string,
-    options?: {
-        startDate?: Date;
-        endDate?: Date;
-        limit?: number;
-        interval?: number; // interval v milisekundách pro agregaci
-        groupBy?: 'hour' | 'day' | 'week' | 'month'; // pro ColumnChart
-    }
-): Promise<DeviceMetrics[]> => {
-    let sql = 'SELECT ';
+// Read electrical metrics by device ID
+export const readElectricalMetricsByDeviceId = (deviceId: string): Promise<ElectricalMetrics[]> => {
+    const sql = 'SELECT * FROM ElectricalMetrics WHERE deviceId = ?';
+    
+    return new Promise<ElectricalMetrics[]>((resolve, reject) => {
+        db.all(sql, [deviceId], (err: Error | null, rows: any[]) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(rows);
+            }
+        });
+    });
+};
+
+// Read electrical metrics by device ID with date filtering
+export const readElectricalMetricsByDeviceIdFiltered = (
+    deviceId: string, 
+    startDate?: Date, 
+    endDate?: Date, 
+    limit?: number
+): Promise<ElectricalMetrics[]> => {
+    let sql = 'SELECT * FROM ElectricalMetrics WHERE deviceId = ?';
     const params: any[] = [deviceId];
-
-    if (options?.groupBy) {
-        // Speciální agregace pro ColumnChart
-        switch (options.groupBy) {
-            case 'hour':
-                sql += `
-                    deviceId,
-                    strftime('%H:00', timestamp) as time,
-                    SUM(total) as total,
-                    COUNT(*) as sampleCount
-                `;
-                break;
-            case 'day':
-                sql += `
-                    deviceId,
-                    CASE strftime('%w', timestamp)
-                        WHEN '0' THEN 'Ne'
-                        WHEN '1' THEN 'Po'
-                        WHEN '2' THEN 'Út'
-                        WHEN '3' THEN 'St'
-                        WHEN '4' THEN 'Čt'
-                        WHEN '5' THEN 'Pá'
-                        WHEN '6' THEN 'So'
-                    END as time,
-                    SUM(total) as total,
-                    COUNT(*) as sampleCount
-                `;
-                break;
-            case 'month':
-                sql += `
-                    deviceId,
-                    strftime('%d', timestamp) as time,
-                    SUM(total) as total,
-                    COUNT(*) as sampleCount
-                `;
-                break;
-        }
-    } else if (options?.interval) {
-        // Standardní intervalová agregace
-        sql += `
-            deviceId,
-            datetime((strftime('%s', timestamp) - (strftime('%s', timestamp) % (? / 1000))) || ' seconds') as timestamp,
-            AVG(apower) as apower,
-            AVG(voltage) as voltage,
-            AVG(current) as current,
-            MAX(total) as total,
-            AVG(temperature) as temperature,
-            AVG(humidity) as humidity,
-            COUNT(*) as sampleCount
-        `;
-        params.push(options.interval);
-    } else {
-        // Bez agregace vracíme všechny sloupce
-        sql += '* ';
+    
+    if (startDate) {
+        sql += ' AND datetime(timestamp) >= datetime(?)';
+        params.push(startDate.toISOString());
     }
-
-    sql += 'FROM DeviceMetrics WHERE deviceId = ?';
-
-    if (options?.startDate) {
-        sql += ' AND timestamp >= ?';
-        params.push(options.startDate.toISOString());
+    
+    if (endDate) {
+        sql += ' AND datetime(timestamp) <= datetime(?)';
+        params.push(endDate.toISOString());
     }
-
-    if (options?.endDate) {
-        sql += ' AND timestamp <= ?';
-        params.push(options.endDate.toISOString());
-    }
-
-    if (options?.groupBy) {
-        // Seskupení podle časového období
-        switch (options.groupBy) {
-            case 'hour':
-                sql += ' GROUP BY deviceId, strftime(\'%H\', timestamp)';
-                break;
-            case 'day':
-                sql += ' GROUP BY deviceId, strftime(\'%w\', timestamp)';
-                break;
-            case 'month':
-                sql += ' GROUP BY deviceId, strftime(\'%d\', timestamp)';
-                break;
-        }
-    } else if (options?.interval) {
-        // Standardní intervalové seskupení
-        sql += ' GROUP BY deviceId, datetime((strftime(\'%s\', timestamp) - (strftime(\'%s\', timestamp) % (? / 1000))) || \' seconds\')';
-        params.push(options.interval);
-    }
-
-    sql += ' ORDER BY timestamp';
-
-    if (options?.limit) {
+    
+    sql += ' ORDER BY datetime(timestamp) ASC';
+    
+    if (limit && limit > 0) {
         sql += ' LIMIT ?';
-        params.push(options.limit);
+        params.push(limit);
     }
-
-    return new Promise<DeviceMetrics[]>((resolve, reject) => {
+    
+    return new Promise<ElectricalMetrics[]>((resolve, reject) => {
         db.all(sql, params, (err: Error | null, rows: any[]) => {
             if (err) {
                 reject(err);
@@ -277,11 +217,98 @@ export const readMetricsByDeviceId = (
     });
 };
 
-// READ - Načtení všech metrik
-export const readAllMetrics = (): Promise<DeviceMetrics[]> => {
-    const sql = 'SELECT * FROM DeviceMetrics ORDER BY timestamp';
+// Update electrical metrics
+export const updateElectricalMetrics = (id: number, metrics: ElectricalMetrics): Promise<void> => {
+    const sql = 'UPDATE ElectricalMetrics SET deviceId = ?, timestamp = ?, apower = ?, voltage = ?, current = ?, total = ? WHERE id = ?';
     
-    return new Promise<DeviceMetrics[]>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
+        db.run(
+            sql, 
+            [
+                metrics.deviceId, 
+                metrics.timestamp, 
+                metrics.apower, 
+                metrics.voltage, 
+                metrics.current, 
+                metrics.total,
+                id
+            ], 
+            function(err: Error | null) {
+                if (err) {
+                    reject(err);
+                } else if (this.changes === 0) {
+                    reject(new Error('Electrical metrics not found'));
+                } else {
+                    resolve();
+                }
+            }
+        );
+    });
+};
+
+// Delete electrical metrics
+export const deleteElectricalMetrics = (id: number): Promise<void> => {
+    const sql = 'DELETE FROM ElectricalMetrics WHERE id = ?';
+    
+    return new Promise<void>((resolve, reject) => {
+        db.run(sql, [id], function(err: Error | null) {
+            if (err) {
+                reject(err);
+            } else if (this.changes === 0) {
+                reject(new Error('Electrical metrics not found'));
+            } else {
+                resolve();
+            }
+        });
+    });
+};
+
+// Delete electrical metrics by device ID (useful when deleting a device)
+export const deleteElectricalMetricsByDeviceId = (deviceId: string): Promise<void> => {
+    const sql = 'DELETE FROM ElectricalMetrics WHERE deviceId = ?';
+    
+    return new Promise<void>((resolve, reject) => {
+        db.run(sql, [deviceId], function(err: Error | null) {
+            if (err) {
+                reject(err);
+            } else {
+                resolve();
+            }
+        });
+    });
+};
+
+// ENVIRONMENTAL METRICS CRUD OPERATIONS
+
+// Create new environmental metrics
+export const createEnvironmentalMetrics = (metrics: EnvironmentalMetrics): Promise<{ id: number }> => {
+    const sql = 'INSERT INTO EnvironmentalMetrics (deviceId, timestamp, temperature, humidity) VALUES (?, ?, ?, ?)';
+    
+    return new Promise<{ id: number }>((resolve, reject) => {
+        db.run(
+            sql, 
+            [
+                metrics.deviceId, 
+                metrics.timestamp, 
+                metrics.temperature, 
+                metrics.humidity
+            ], 
+            function(err: Error | null) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve({ id: this.lastID });
+                }
+            }
+        );
+    });
+};
+
+// Read all environmental metrics
+export const readEnvironmentalMetrics = (): Promise<EnvironmentalMetrics[]> => {
+    const sql = 'SELECT * FROM EnvironmentalMetrics';
+    
+    return new Promise<EnvironmentalMetrics[]>((resolve, reject) => {
         db.all(sql, [], (err: Error | null, rows: any[]) => {
             if (err) {
                 reject(err);
@@ -292,12 +319,109 @@ export const readAllMetrics = (): Promise<DeviceMetrics[]> => {
     });
 };
 
-// DELETE - Odstranění metrik pro konkrétní zařízení
-export const deleteMetricsByDeviceId = (deviceId: string): Promise<void> => {
-    const sql = 'DELETE FROM DeviceMetrics WHERE deviceId = ?';
+// Read environmental metrics by device ID
+export const readEnvironmentalMetricsByDeviceId = (deviceId: string): Promise<EnvironmentalMetrics[]> => {
+    const sql = 'SELECT * FROM EnvironmentalMetrics WHERE deviceId = ?';
+    
+    return new Promise<EnvironmentalMetrics[]>((resolve, reject) => {
+        db.all(sql, [deviceId], (err: Error | null, rows: any[]) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(rows);
+            }
+        });
+    });
+};
+
+// Read environmental metrics by device ID with date filtering
+export const readEnvironmentalMetricsByDeviceIdFiltered = (
+    deviceId: string, 
+    startDate?: Date, 
+    endDate?: Date, 
+    limit?: number
+): Promise<EnvironmentalMetrics[]> => {
+    let sql = 'SELECT * FROM EnvironmentalMetrics WHERE deviceId = ?';
+    const params: any[] = [deviceId];
+    
+    if (startDate) {
+        sql += ' AND datetime(timestamp) >= datetime(?)';
+        params.push(startDate.toISOString());
+    }
+    
+    if (endDate) {
+        sql += ' AND datetime(timestamp) <= datetime(?)';
+        params.push(endDate.toISOString());
+    }
+    
+    sql += ' ORDER BY datetime(timestamp) ASC';
+    
+    if (limit && limit > 0) {
+        sql += ' LIMIT ?';
+        params.push(limit);
+    }
+    
+    return new Promise<EnvironmentalMetrics[]>((resolve, reject) => {
+        db.all(sql, params, (err: Error | null, rows: any[]) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(rows);
+            }
+        });
+    });
+};
+
+// Update environmental metrics
+export const updateEnvironmentalMetrics = (id: number, metrics: EnvironmentalMetrics): Promise<void> => {
+    const sql = 'UPDATE EnvironmentalMetrics SET deviceId = ?, timestamp = ?, temperature = ?, humidity = ? WHERE id = ?';
     
     return new Promise<void>((resolve, reject) => {
-        db.run(sql, [deviceId], function (err: Error | null) {
+        db.run(
+            sql, 
+            [
+                metrics.deviceId, 
+                metrics.timestamp, 
+                metrics.temperature, 
+                metrics.humidity,
+                id
+            ], 
+            function(err: Error | null) {
+                if (err) {
+                    reject(err);
+                } else if (this.changes === 0) {
+                    reject(new Error('Environmental metrics not found'));
+                } else {
+                    resolve();
+                }
+            }
+        );
+    });
+};
+
+// Delete environmental metrics
+export const deleteEnvironmentalMetrics = (id: number): Promise<void> => {
+    const sql = 'DELETE FROM EnvironmentalMetrics WHERE id = ?';
+    
+    return new Promise<void>((resolve, reject) => {
+        db.run(sql, [id], function(err: Error | null) {
+            if (err) {
+                reject(err);
+            } else if (this.changes === 0) {
+                reject(new Error('Environmental metrics not found'));
+            } else {
+                resolve();
+            }
+        });
+    });
+};
+
+// Delete environmental metrics by device ID (useful when deleting a device)
+export const deleteEnvironmentalMetricsByDeviceId = (deviceId: string): Promise<void> => {
+    const sql = 'DELETE FROM EnvironmentalMetrics WHERE deviceId = ?';
+    
+    return new Promise<void>((resolve, reject) => {
+        db.run(sql, [deviceId], function(err: Error | null) {
             if (err) {
                 reject(err);
             } else {
@@ -307,21 +431,15 @@ export const deleteMetricsByDeviceId = (deviceId: string): Promise<void> => {
     });
 };
 
-// Pro zpětnou kompatibilitu
-export const createItem = (timestamp: string, apower: number, voltage: number, current: number, total: number): Promise<{ id: number }> => {
-    return createMetrics({
-        deviceId: 'shelly1', // Výchozí ID pro zpětnou kompatibilitu
-        timestamp,
-        apower,
-        voltage,
-        current,
-        total
+// Delete all metrics for a device (both electrical and environmental)
+export const deleteAllMetricsByDeviceId = (deviceId: string): Promise<void> => {
+    return new Promise<void>(async (resolve, reject) => {
+        try {
+            await deleteElectricalMetricsByDeviceId(deviceId);
+            await deleteEnvironmentalMetricsByDeviceId(deviceId);
+            resolve();
+        } catch (error) {
+            reject(error);
+        }
     });
-};
-
-// Pro zpětnou kompatibilitu
-export const readItems = (callback: (err: Error | null, items: DeviceMetrics[] | null) => void): void => {
-    readAllMetrics()
-        .then(items => callback(null, items))
-        .catch(err => callback(err, null));
 };

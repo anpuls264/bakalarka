@@ -1,6 +1,17 @@
 import { Device, DeviceConfig, DeviceCommands } from './Device';
 
 export class ShellyHT extends Device {
+  private pendingMetrics: {
+    temperature?: number;
+    humidity?: number;
+    lastUpdate: number;
+  } = {
+    lastUpdate: Date.now()
+  };
+  
+  private metricsUpdateTimeout: NodeJS.Timeout | null = null;
+  private readonly METRICS_TIMEOUT = 10000; // 10 sekund na čekání na kompletní data
+  
   constructor(config: DeviceConfig) {
     super(config);
     
@@ -10,9 +21,10 @@ export class ShellyHT extends Device {
       temperature: 0,
       humidity: 0,
       battery: 100,
-      wifiName: null,
       bluetoothEnable: false,
-      mqttEnable: false
+      mqttEnable: false,
+      wifiName: null,
+      wifiConnected: false,
     };
   }
 
@@ -24,15 +36,24 @@ export class ShellyHT extends Device {
       const messageStr = message.toString();
       const data = JSON.parse(messageStr);
       
-      if (topic === `${this.config.mqttTopic}/status/temperature:0`) {
+      if (topic === `${this.config.mqttPrefix}/status/temperature:0`) {
         // Zpracování dat o teplotě
         this.handleTemperatureData(data);
-      } else if (topic === `${this.config.mqttTopic}/status/humidity:0`) {
+      } else if (topic === `${this.config.mqttPrefix}/status/humidity:0`) {
         // Zpracování dat o vlhkosti
         this.handleHumidityData(data);
-      } else if (topic === `${this.config.mqttTopic}/status/devicepower:0`) {
+      } else if (topic === `${this.config.mqttPrefix}/status/devicepower:0`) {
         // Zpracování dat o baterii
         this.handleBatteryData(data);
+      } else if (topic === `${this.config.mqttPrefix}/status/wifi`) {
+        // Zpracování dat o WiFi
+        this.handleWifiData(data);
+      } else if (topic === `${this.config.mqttPrefix}/status/ble`) {
+        // Zpracování dat o Bluetooth
+        this.handleBluetoothData(data);
+      } else if (topic === `${this.config.mqttPrefix}/status/mqtt`) {
+        // Zpracování dat o MQTT
+        this.handleMqttData(data);
       } else if (topic === 'user_1/rpc') {
         // Zpracování RPC odpovědí
         this.handleRpcResponse(data);
@@ -53,10 +74,12 @@ export class ShellyHT extends Device {
       temperature: data.tC
     });
     
-    // Publikování metrik pro uložení do databáze
-    this.publishMetrics({
-      temperature: data.tC
-    });
+    // Uložení do dočasných metrik
+    this.pendingMetrics.temperature = data.tC;
+    this.pendingMetrics.lastUpdate = Date.now();
+    
+    // Pokus o odeslání kompletních metrik
+    this.tryPublishCompleteMetrics();
   }
 
   // Zpracování dat o vlhkosti
@@ -70,22 +93,106 @@ export class ShellyHT extends Device {
       humidity: data.rh
     });
     
-    // Publikování metrik pro uložení do databáze
-    this.publishMetrics({
-      humidity: data.rh
-    });
+    // Uložení do dočasných metrik
+    this.pendingMetrics.humidity = data.rh;
+    this.pendingMetrics.lastUpdate = Date.now();
+    
+    // Pokus o odeslání kompletních metrik
+    this.tryPublishCompleteMetrics();
+  }
+
+  // Metoda pro kontrolu a odeslání kompletních metrik
+  private tryPublishCompleteMetrics(): void {
+    // Zrušení předchozího timeoutu, pokud existuje
+    if (this.metricsUpdateTimeout) {
+      clearTimeout(this.metricsUpdateTimeout);
+      this.metricsUpdateTimeout = null;
+    }
+    
+    // Kontrola, zda máme oba typy dat
+    if (this.pendingMetrics.temperature !== undefined && this.pendingMetrics.humidity !== undefined) {
+      // Máme kompletní data, můžeme publikovat
+      this.publishEnvironmentalMetrics({
+        temperature: this.pendingMetrics.temperature,
+        humidity: this.pendingMetrics.humidity
+      });
+      
+      console.log(`ShellyHT (${this.config.id}): Published complete metrics - Temp: ${this.pendingMetrics.temperature}°C, Humidity: ${this.pendingMetrics.humidity}%`);
+      
+      // Reset pending metrik
+      this.pendingMetrics = { lastUpdate: Date.now() };
+    } else {
+      // Nemáme kompletní data, nastavíme timeout na odeslání částečných dat
+      this.metricsUpdateTimeout = setTimeout(() => {
+        // Pokud uplynul timeout a nemáme kompletní data, pošleme co máme
+        console.log(`ShellyHT (${this.config.id}): Metrics timeout - sending partial data`);
+        
+        if (this.pendingMetrics.temperature !== undefined || this.pendingMetrics.humidity !== undefined) {
+          this.publishEnvironmentalMetrics({
+            temperature: this.pendingMetrics.temperature ?? this.state.temperature,
+            humidity: this.pendingMetrics.humidity ?? this.state.humidity
+          });
+          
+          // Reset pending metrik
+          this.pendingMetrics = { lastUpdate: Date.now() };
+        }
+        
+        this.metricsUpdateTimeout = null;
+      }, this.METRICS_TIMEOUT);
+    }
   }
 
   // Zpracování dat o baterii
   private handleBatteryData(data: any): void {
-    if (data.battery?.percent === undefined) {
+    if (!data.battery) {
       return;
     }
     
-    // Aktualizace stavu
-    this.updateState({
-      battery: data.battery.percent
-    });
+    const updates: any = {};
+    
+    if (data.battery.percent !== undefined) {
+      updates.battery = data.battery.percent;
+    }
+    
+    this.updateState(updates);
+  }
+
+  // Zpracování dat o WiFi
+  private handleWifiData(data: any): void {
+    const updates: any = {};
+    
+    if (data.ssid) {
+      updates.wifiName = data.ssid;
+    }
+    
+    if (data.status) {
+      updates.wifiConnected = data.status === 'got ip' || data.status === 'connected';
+    }
+    
+    this.updateState(updates);
+  }
+
+  // Zpracování dat o Bluetooth
+  private handleBluetoothData(data: any): void {
+    if (typeof data === 'object' && Object.keys(data).length > 0) {
+      this.updateState({
+        bluetoothEnable: true
+      });
+    } else {
+      // Prázdný objekt {} často znamená, že Bluetooth je vypnutý
+      this.updateState({
+        bluetoothEnable: false
+      });
+    }
+  }
+
+  // Zpracování dat o MQTT
+  private handleMqttData(data: any): void {
+    if (data.connected !== undefined) {
+      this.updateState({
+        mqttEnable: data.connected
+      });
+    }
   }
 
   // Zpracování RPC odpovědí
@@ -126,206 +233,33 @@ export class ShellyHT extends Device {
     ];
     
     initialPayloads.forEach(payload => {
-      this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
+      this.publishMqttMessage(`${this.config.mqttPrefix}/rpc`, JSON.stringify(payload));
     });
     
     // Požadavek na aktuální hodnoty
-    this.publishMqttMessage(`${this.config.mqttTopic}/command`, JSON.stringify({
+    this.publishMqttMessage(`${this.config.mqttPrefix}/command`, JSON.stringify({
       id: 1,
       src: "user_1",
       method: "Temperature.GetStatus"
     }));
     
-    this.publishMqttMessage(`${this.config.mqttTopic}/command`, JSON.stringify({
+    this.publishMqttMessage(`${this.config.mqttPrefix}/command`, JSON.stringify({
       id: 2,
       src: "user_1",
       method: "Humidity.GetStatus"
     }));
     
-    this.publishMqttMessage(`${this.config.mqttTopic}/command`, JSON.stringify({
+    this.publishMqttMessage(`${this.config.mqttPrefix}/command`, JSON.stringify({
       id: 3,
       src: "user_1",
       method: "Battery.GetStatus"
     }));
   }
 
-  // Dostupné příkazy pro zařízení
+  // Dostupné příkazy pro zařízení (zjednodušené)
   getCommands(): DeviceCommands {
     return {
-      toggleBluetooth: (enable: boolean) => {
-        const payload = {
-          id: 124,
-          src: "user_1",
-          method: "Bluetooth.SetConfig",
-          params: { enable }
-        };
-        
-        this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
-        this.updateState({ bluetoothEnable: enable });
-      },
-      
-      scanWifi: async () => {
-        return new Promise((resolve, reject) => {
-          const payload = {
-            id: 126,
-            src: "user_1",
-            method: "Wifi.Scan"
-          };
-          
-          // Nastavíme timeout pro případ, že nedostaneme odpověď
-          const timeoutId = setTimeout(() => {
-            reject(new Error('WiFi scan timed out'));
-          }, 10000);
-          
-          // Jednorázový posluchač pro odpověď
-          const handleResponse = (topic: string, message: Buffer) => {
-            if (topic === 'user_1/rpc') {
-              try {
-                const data = JSON.parse(message.toString());
-                
-                if (data.id === 126 && data.result && data.result.results) {
-                  clearTimeout(timeoutId);
-                  
-                  // Transformace výsledků do očekávaného formátu
-                  const networks = data.result.results.map((network: any) => ({
-                    ssid: network.ssid,
-                    rssi: network.rssi,
-                    secure: network.auth_mode !== 0
-                  }));
-                  
-                  resolve({ networks });
-                }
-              } catch (error) {
-                console.error('Error parsing scan response:', error);
-              }
-            }
-          };
-          
-          // Přidáme posluchače a odešleme příkaz
-          this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
-        });
-      },
-      
-      connectWifi: async (ssid: string, password?: string) => {
-        return new Promise((resolve, reject) => {
-          const wifiConfig: any = { ssid };
-          
-          if (password) {
-            wifiConfig.password = password;
-          }
-          
-          const payload = {
-            id: 127,
-            src: "user_1",
-            method: "Wifi.SetConfig",
-            params: {
-              config: {
-                sta: wifiConfig
-              }
-            }
-          };
-          
-          // Nastavíme timeout pro případ, že nedostaneme odpověď
-          const timeoutId = setTimeout(() => {
-            reject(new Error('WiFi connection timed out'));
-          }, 15000);
-          
-          // Jednorázový posluchač pro odpověď
-          const handleResponse = (topic: string, message: Buffer) => {
-            if (topic === 'user_1/rpc') {
-              try {
-                const data = JSON.parse(message.toString());
-                
-                if (data.id === 127) {
-                  clearTimeout(timeoutId);
-                  
-                  if (data.error) {
-                    reject(new Error(data.error.message || 'Failed to connect to WiFi'));
-                  } else {
-                    this.updateState({ wifiName: ssid });
-                    resolve(data.result);
-                  }
-                }
-              } catch (error) {
-                console.error('Error parsing connect response:', error);
-              }
-            }
-          };
-          
-          // Přidáme posluchače a odešleme příkaz
-          this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
-        });
-      },
-      
-      getWifiStatus: async () => {
-        return new Promise((resolve, reject) => {
-          const payload = {
-            id: 129,
-            src: "user_1",
-            method: "Wifi.GetStatus"
-          };
-          
-          // Nastavíme timeout pro případ, že nedostaneme odpověď
-          const timeoutId = setTimeout(() => {
-            reject(new Error('WiFi status request timed out'));
-          }, 5000);
-          
-          // Jednorázový posluchač pro odpověď
-          const handleResponse = (topic: string, message: Buffer) => {
-            if (topic === 'user_1/rpc') {
-              try {
-                const data = JSON.parse(message.toString());
-                
-                if (data.id === 129) {
-                  clearTimeout(timeoutId);
-                  
-                  if (data.error) {
-                    reject(new Error(data.error.message || 'Failed to get WiFi status'));
-                  } else {
-                    resolve(data.result);
-                  }
-                }
-              } catch (error) {
-                console.error('Error parsing status response:', error);
-              }
-            }
-          };
-          
-          // Přidáme posluchače a odešleme příkaz
-          this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
-        });
-      },
-      
-      // Specifické příkazy pro ShellyHT
-      getTemperature: () => {
-        const payload = {
-          id: 1,
-          src: "user_1",
-          method: "Temperature.GetStatus"
-        };
-        
-        this.publishMqttMessage(`${this.config.mqttTopic}/command`, JSON.stringify(payload));
-      },
-      
-      getHumidity: () => {
-        const payload = {
-          id: 2,
-          src: "user_1",
-          method: "Humidity.GetStatus"
-        };
-        
-        this.publishMqttMessage(`${this.config.mqttTopic}/command`, JSON.stringify(payload));
-      },
-      
-      getBattery: () => {
-        const payload = {
-          id: 3,
-          src: "user_1",
-          method: "Battery.GetStatus"
-        };
-        
-        this.publishMqttMessage(`${this.config.mqttTopic}/command`, JSON.stringify(payload));
-      }
-    };
+    
+    }
   }
 }

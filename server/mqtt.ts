@@ -6,7 +6,7 @@ dotenv.config();
 const mqttServerUrl = process.env.MQTT_SERVER_URL || 'mqtt://localhost';
 
 const brokerOptions: mqtt.IClientOptions = {
-  host: '172.31.45.126',
+  host: '13.61.175.177',
   port: 1883,
   username: 'simatic',
   password: 'vitkovic1',

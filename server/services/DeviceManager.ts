@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { Device, DeviceConfig } from '../models/Device';
+import { Device, DeviceConfig, DeviceCommands, DeviceState } from '../models/Device';
 import { ShellyPlugS } from '../models/ShellyPlugS';
 import { ShellyHT } from '../models/ShellyHT';
 
@@ -39,8 +39,12 @@ export class DeviceManager extends EventEmitter {
       this.emit('deviceStateChanged', updatedDevice);
     });
     
-    device.on('metrics', (metrics: any) => {
-      this.emit('deviceMetrics', metrics);
+    device.on('electricalMetrics', (metrics) => {
+      this.emit('electricalMetrics', metrics);
+    });
+    
+    device.on('environmentalMetrics', (metrics) => {
+      this.emit('environmentalMetrics', metrics);
     });
     
     device.on('mqttPublish', (topic: string, payload: string) => {
@@ -87,7 +91,7 @@ export class DeviceManager extends EventEmitter {
     // Check if this is a device-specific message
     for (const device of this.devices.values()) {
       // Check if the topic matches this device's topic
-      if (topic.startsWith(device.getMqttTopic()) || topic === 'user_1/rpc') {
+      if (topic.startsWith(device.getMqttPrefix()) || topic === 'user_1/rpc') {
         device.handleMessage(topic, message);
       }
     }
@@ -96,13 +100,11 @@ export class DeviceManager extends EventEmitter {
   // Initialize all devices by sending initial MQTT messages
   initializeDevices(): void {
     for (const device of this.devices.values()) {
-      if (device instanceof ShellyPlugS || device instanceof ShellyHT) {
-        device.publishInitialMessages();
-      }
+      device.publishInitialMessages();
     }
   }
 
-  // Save device configurations
+  // Get device configurations
   getDeviceConfigs(): DeviceConfig[] {
     return [...this.deviceConfigs];
   }
@@ -115,7 +117,11 @@ export class DeviceManager extends EventEmitter {
       return false;
     }
     
-    this.deviceConfigs[configIndex] = { ...this.deviceConfigs[configIndex], ...updates };
+    // Create a new config object with the updates
+    this.deviceConfigs[configIndex] = { 
+      ...this.deviceConfigs[configIndex], 
+      ...updates 
+    };
     
     // If the device exists, recreate it with the new config
     const existingDevice = this.devices.get(id);
@@ -128,5 +134,39 @@ export class DeviceManager extends EventEmitter {
     this.emit('deviceConfigUpdated', this.deviceConfigs[configIndex]);
     
     return true;
+  }
+
+  // Get device status (Bluetooth and WiFi)
+  getDeviceStatus(id: string): { bluetoothEnabled: boolean, wifiConnection: string | null } | null {
+    const device = this.getDevice(id);
+    
+    if (!device) {
+      return null;
+    }
+    
+    const state = device.getState();
+    
+    return {
+      bluetoothEnabled: state.bluetoothEnable || false,
+      wifiConnection: state.wifiName || null
+    };
+  }
+
+  // Request refresh of device status
+  refreshDeviceStatus(id: string): boolean {
+    const device = this.getDevice(id);
+    
+    if (!device) {
+      return false;
+    }
+    
+    const commands = device.getCommands();
+    
+    if (commands.getDeviceStatus) {
+      commands.getDeviceStatus();
+      return true;
+    }
+    
+    return false;
   }
 }

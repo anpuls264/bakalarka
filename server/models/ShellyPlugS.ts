@@ -13,6 +13,7 @@ export class ShellyPlugS extends Device {
       bluetoothEnable: false,
       mqttEnable: false,
       wifiName: null,
+      wifiConnected: false,
       currentPower: 0,
       currentVoltage: 0,
       currentCurrent: 0,
@@ -28,9 +29,18 @@ export class ShellyPlugS extends Device {
       const messageStr = message.toString();
       const data = JSON.parse(messageStr);
       
-      if (topic === `${this.config.mqttTopic}/status/switch:0`) {
+      if (topic === `${this.config.mqttPrefix}/status/switch:0`) {
         // Zpracování dat o spotřebě
         this.handlePowerData(data);
+      } else if (topic === `${this.config.mqttPrefix}/status/wifi`) {
+        // Zpracování dat o WiFi
+        this.handleWifiData(data);
+      } else if (topic === `${this.config.mqttPrefix}/status/ble`) {
+        // Zpracování dat o Bluetooth
+        this.handleBluetoothData(data);
+      } else if (topic === `${this.config.mqttPrefix}/status/mqtt`) {
+        // Zpracování dat o MQTT
+        this.handleMqttData(data);
       } else if (topic === 'user_1/rpc') {
         // Zpracování RPC odpovědí
         this.handleRpcResponse(data);
@@ -58,16 +68,55 @@ export class ShellyPlugS extends Device {
       currentPower: data.apower,
       currentVoltage: data.voltage,
       currentCurrent: data.current,
-      totalEnergy: totalEnergy
+      totalEnergy: totalEnergy,
+      deviceTurnOnOff: data.output === true
     });
     
     // Publikování metrik pro uložení do databáze
-    this.publishMetrics({
+    this.publishElectricalMetrics({
       apower: data.apower,
       voltage: data.voltage,
       current: data.current,
       total: totalEnergy
     });
+  }
+
+  // Zpracování dat o WiFi
+  private handleWifiData(data: any): void {
+    const updates: any = {};
+    
+    if (data.ssid) {
+      updates.wifiName = data.ssid;
+    }
+    
+    if (data.status) {
+      updates.wifiConnected = data.status === 'got ip' || data.status === 'connected';
+    }
+    
+    this.updateState(updates);
+  }
+
+  // Zpracování dat o Bluetooth
+  private handleBluetoothData(data: any): void {
+    if (typeof data === 'object' && Object.keys(data).length > 0) {
+      this.updateState({
+        bluetoothEnable: true
+      });
+    } else {
+      // Prázdný objekt {} často znamená, že Bluetooth je vypnutý
+      this.updateState({
+        bluetoothEnable: false
+      });
+    }
+  }
+
+  // Zpracování dat o MQTT
+  private handleMqttData(data: any): void {
+    if (data.connected !== undefined) {
+      this.updateState({
+        mqttEnable: data.connected
+      });
+    }
   }
 
   // Zpracování RPC odpovědí
@@ -114,7 +163,7 @@ export class ShellyPlugS extends Device {
     ];
     
     initialPayloads.forEach(payload => {
-      this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
+      this.publishMqttMessage(`${this.config.mqttPrefix}/rpc`, JSON.stringify(payload));
     });
   }
 
@@ -129,167 +178,10 @@ export class ShellyPlugS extends Device {
           params: { id: 0, on: turnOn }
         };
         
-        this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
+        this.publishMqttMessage(`${this.config.mqttPrefix}/rpc`, JSON.stringify(payload));
         // Pro lepší UX aktualizujeme stav okamžitě, bude opraven, pokud se skutečný stav liší
         this.updateState({ deviceTurnOnOff: turnOn });
       },
-      
-      toggleBluetooth: (enable: boolean) => {
-        const payload = {
-          id: 124,
-          src: "user_1",
-          method: "Bluetooth.SetConfig",
-          params: { enable }
-        };
-        
-        this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
-        this.updateState({ bluetoothEnable: enable });
-      },
-      
-      setBrightness: (brightness: number) => {
-        const payload = {
-          id: 125,
-          src: "user_1",
-          method: "Light.Set",
-          params: { id: 0, brightness }
-        };
-        
-        this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
-      },
-      
-      scanWifi: async () => {
-        return new Promise((resolve, reject) => {
-          const payload = {
-            id: 126,
-            src: "user_1",
-            method: "Wifi.Scan"
-          };
-          
-          // Nastavíme timeout pro případ, že nedostaneme odpověď
-          const timeoutId = setTimeout(() => {
-            reject(new Error('WiFi scan timed out'));
-          }, 10000);
-          
-          // Jednorázový posluchač pro odpověď
-          const handleResponse = (topic: string, message: Buffer) => {
-            if (topic === 'user_1/rpc') {
-              try {
-                const data = JSON.parse(message.toString());
-                
-                if (data.id === 126 && data.result && data.result.results) {
-                  clearTimeout(timeoutId);
-                  
-                  // Transformace výsledků do očekávaného formátu
-                  const networks = data.result.results.map((network: any) => ({
-                    ssid: network.ssid,
-                    rssi: network.rssi,
-                    secure: network.auth_mode !== 0
-                  }));
-                  
-                  resolve({ networks });
-                }
-              } catch (error) {
-                console.error('Error parsing scan response:', error);
-              }
-            }
-          };
-          
-          // Přidáme posluchače a odešleme příkaz
-          // Poznámka: Toto je jen ukázka, ve skutečnosti by bylo potřeba přidat posluchače do MQTT klienta
-          // a později ho odstranit. V této implementaci to není možné, protože nemáme přímý přístup k MQTT klientovi.
-          this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
-        });
-      },
-      
-      connectWifi: async (ssid: string, password?: string) => {
-        return new Promise((resolve, reject) => {
-          const wifiConfig: any = { ssid };
-          
-          if (password) {
-            wifiConfig.password = password;
-          }
-          
-          const payload = {
-            id: 127,
-            src: "user_1",
-            method: "Wifi.SetConfig",
-            params: {
-              config: {
-                sta: wifiConfig
-              }
-            }
-          };
-          
-          // Nastavíme timeout pro případ, že nedostaneme odpověď
-          const timeoutId = setTimeout(() => {
-            reject(new Error('WiFi connection timed out'));
-          }, 15000);
-          
-          // Jednorázový posluchač pro odpověď
-          const handleResponse = (topic: string, message: Buffer) => {
-            if (topic === 'user_1/rpc') {
-              try {
-                const data = JSON.parse(message.toString());
-                
-                if (data.id === 127) {
-                  clearTimeout(timeoutId);
-                  
-                  if (data.error) {
-                    reject(new Error(data.error.message || 'Failed to connect to WiFi'));
-                  } else {
-                    this.updateState({ wifiName: ssid });
-                    resolve(data.result);
-                  }
-                }
-              } catch (error) {
-                console.error('Error parsing connect response:', error);
-              }
-            }
-          };
-          
-          // Přidáme posluchače a odešleme příkaz
-          this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
-        });
-      },
-      
-      getWifiStatus: async () => {
-        return new Promise((resolve, reject) => {
-          const payload = {
-            id: 129,
-            src: "user_1",
-            method: "Wifi.GetStatus"
-          };
-          
-          // Nastavíme timeout pro případ, že nedostaneme odpověď
-          const timeoutId = setTimeout(() => {
-            reject(new Error('WiFi status request timed out'));
-          }, 5000);
-          
-          // Jednorázový posluchač pro odpověď
-          const handleResponse = (topic: string, message: Buffer) => {
-            if (topic === 'user_1/rpc') {
-              try {
-                const data = JSON.parse(message.toString());
-                
-                if (data.id === 129) {
-                  clearTimeout(timeoutId);
-                  
-                  if (data.error) {
-                    reject(new Error(data.error.message || 'Failed to get WiFi status'));
-                  } else {
-                    resolve(data.result);
-                  }
-                }
-              } catch (error) {
-                console.error('Error parsing status response:', error);
-              }
-            }
-          };
-          
-          // Přidáme posluchače a odešleme příkaz
-          this.publishMqttMessage(`${this.config.mqttTopic}/rpc`, JSON.stringify(payload));
-        });
-      }
-    };
+    }
   }
 }

@@ -32,7 +32,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const mqttServerUrl = process.env.MQTT_SERVER_URL || 'mqtt://localhost';
 const brokerOptions = {
-    host: '172.31.45.126',
+    host: '13.61.175.177',
     port: 1883,
     username: 'simatic',
     password: 'vitkovic1',

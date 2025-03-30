@@ -1,23 +1,51 @@
 import * as mqtt from 'mqtt';
 import { DeviceManager } from './DeviceManager';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export class MqttService {
   private client: mqtt.MqttClient;
   private deviceManager: DeviceManager;
   private isConnected: boolean = false;
   private pendingMessages: Array<{ topic: string, payload: string }> = [];
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 10;
 
-  constructor(brokerOptions: mqtt.IClientOptions, deviceManager: DeviceManager) {
+  constructor(deviceManager: DeviceManager) {
     this.deviceManager = deviceManager;
-    this.client = mqtt.connect(brokerOptions);
+    
+    const brokerOptions: mqtt.IClientOptions = {
+      host: '13.61.175.177',
+      port: 1883,
+      username: 'simatic',
+      password: 'vitkovic1',
+      protocol: 'mqtt', 
+      keepalive: 60,
+      reconnectPeriod: 1000,
+      connectTimeout: 30 * 1000,
+      clean: true
+    };
+    
+    console.log(`Attempting to connect to MQTT broker at mqtt://${brokerOptions.host}:${brokerOptions.port}`);
+    
+    this.client = mqtt.connect(`mqtt://${brokerOptions.host}:${brokerOptions.port}`, {
+      username: brokerOptions.username,
+      password: brokerOptions.password,
+      keepalive: brokerOptions.keepalive,
+      reconnectPeriod: brokerOptions.reconnectPeriod,
+      connectTimeout: brokerOptions.connectTimeout,
+      clean: brokerOptions.clean
+    });
     
     this.setupEventHandlers();
   }
 
   private setupEventHandlers(): void {
     this.client.on('connect', () => {
-      console.log('Connected to MQTT broker');
+      console.log('Connected to MQTT broker successfully');
       this.isConnected = true;
+      this.reconnectAttempts = 0;
       this.subscribeToTopics();
       this.processPendingMessages();
       
@@ -25,41 +53,6 @@ export class MqttService {
       setTimeout(() => {
         this.deviceManager.initializeDevices();
       }, 1000);
-    });
-
-    // Listen for device added events to subscribe to new device topics
-    this.deviceManager.on('deviceAdded', (device) => {
-      if (this.isConnected) {
-        console.log(device.getMqttTopic());
-        const baseTopic = `${device.getMqttTopic()}/status/#`;
-        this.client.subscribe(baseTopic, (err: Error | null) => {
-          if (err) {
-            console.error(`Error subscribing to ${baseTopic}:`, err);
-          } else {
-            console.log(`Subscribed to ${baseTopic} for newly added device`);
-          }
-        });
-      }
-    });
-    
-    // Listen for device removed events to unsubscribe from topics
-    this.deviceManager.on('deviceRemoved', (deviceId: string) => {
-      if (this.isConnected) {
-        // Find the device in the list before it was removed to get its topic
-        const devices = this.deviceManager.getAllDevices();
-        const device = devices.find(d => d.getId() === deviceId);
-        
-        if (device) {
-          const baseTopic = `${device.getMqttTopic()}/status/#`;
-          this.client.unsubscribe(baseTopic, (err) => {
-            if (err) {
-              console.error(`Error unsubscribing from ${baseTopic}:`, err);
-            } else {
-              console.log(`Unsubscribed from ${baseTopic} for removed device`);
-            }
-          });
-        }
-      }
     });
 
     this.client.on('message', (topic: string, message: Buffer) => {
@@ -73,7 +66,13 @@ export class MqttService {
     });
 
     this.client.on('reconnect', () => {
-      console.log('MQTT client reconnecting');
+      this.reconnectAttempts++;
+      console.log(`MQTT client reconnecting (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+      
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.error('Maximum reconnection attempts reached, giving up');
+        this.client.end(true);
+      }
     });
 
     this.client.on('close', () => {
@@ -102,7 +101,7 @@ export class MqttService {
     
     // Device-specific topics
     for (const device of devices) {
-      const baseTopic = `${device.getMqttTopic()}/status/#`;
+      const baseTopic = `${device.getMqttPrefix()}/status/#`;
       
       this.client.subscribe(baseTopic, (err: Error | null) => {
         if (err) {
@@ -191,16 +190,6 @@ export class MqttService {
         }
       });
     });
-  }
-
-  // Re-subscribe to all device topics
-  resubscribeToAllTopics(): void {
-    if (this.isConnected) {
-      console.log('Re-subscribing to all device topics');
-      this.subscribeToTopics();
-    } else {
-      console.warn('Cannot re-subscribe: MQTT client not connected');
-    }
   }
 
   // Close the MQTT connection

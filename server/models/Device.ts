@@ -4,8 +4,7 @@ export interface DeviceConfig {
   id: string;
   name: string;
   type: string;
-  mqttTopic: string;
-  capabilities: string[];
+  mqttPrefix: string;
 }
 
 export interface DeviceState {
@@ -25,7 +24,9 @@ export abstract class Device extends EventEmitter {
     this.config = config;
     this.state = {
       deviceName: config.name,
-      mqttTopic: config.mqttTopic
+      mqttTopic: config.mqttPrefix,
+      bluetoothEnable: false,
+      wifiName: null
     };
   }
 
@@ -42,16 +43,22 @@ export abstract class Device extends EventEmitter {
     return this.config.type;
   }
 
-  getMqttTopic(): string {
-    return this.config.mqttTopic;
-  }
-
-  getCapabilities(): string[] {
-    return this.config.capabilities;
+  getMqttPrefix(): string {
+    return this.config.mqttPrefix;
   }
 
   getState(): DeviceState {
     return { ...this.state };
+  }
+
+  // Getter pro stav Bluetooth
+  getBluetoothStatus(): boolean {
+    return this.state.bluetoothEnable;
+  }
+
+  // Getter pro WiFi připojení
+  getWifiConnection(): string | null {
+    return this.state.wifiName;
   }
 
   // Abstraktní metody, které musí implementovat konkrétní zařízení
@@ -70,12 +77,21 @@ export abstract class Device extends EventEmitter {
     this.emit('mqttPublish', topic, payload);
   }
 
-  // Pomocná metoda pro publikování metrik
-  protected publishMetrics(metrics: any): void {
-    this.emit('metrics', {
+  protected publishElectricalMetrics(metrics: any): void {
+    this.emit('electricalMetrics', {
+      deviceId: this.config.id,
+      timestamp: new Date().toISOString(),
+      ...metrics
+    });
+  }
+  
+  protected publishEnvironmentalMetrics(metrics: any): void {
+    console.log("Tady taky");
+    this.emit('environmentalMetrics', {
       deviceId: this.config.id,
       timestamp: new Date().toISOString(),
       ...metrics
     });
   }
 }
+
